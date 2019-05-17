@@ -35,6 +35,7 @@ spec:
       labels:
         name: cos-auditd-logging
     spec:
+      hostNetwork: true
       nodeSelector:
         cloud.google.com/gke-os-distribution: cos
       volumes:
@@ -63,14 +64,15 @@ spec:
             memory: "10Mi"
             cpu: "10m"
       containers:
-      - command:
+      - name: fluentd-gcp-cos-auditd
+        command:
         - /bin/sh
         - -c
         - /run.sh $FLUENTD_ARGS 2>&1 >>/var/log/fluentd-audit.log
         env:
         - name: FLUENTD_ARGS
           value: --no-supervisor
-        image: gcr.io/google-containers/fluentd-gcp:2.0.18
+        image: k8s.gcr.io/fluentd-gcp:2.0.18
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
@@ -91,7 +93,6 @@ spec:
           periodSeconds: 60
           successThreshold: 1
           timeoutSeconds: 1
-        name: fluentd-gcp-cos-auditd
         resources:
           limits:
             memory: 800Mi
@@ -110,8 +111,6 @@ spec:
           name: config-volume
       dnsPolicy: Default
       restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
       terminationGracePeriodSeconds: 30
       tolerations:
       - effect: NoSchedule
