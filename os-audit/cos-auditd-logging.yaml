@@ -1,0 +1,171 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cos-auditd
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cos-auditd-logging
+  namespace: cos-auditd
+  annotations:
+    kubernetes.io/description: 'DaemonSet that enables Linux auditd logging on COS nodes.'
+spec:
+  selector:
+    matchLabels:
+      name: cos-auditd-logging
+  template:
+    metadata:
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+      labels:
+        name: cos-auditd-logging
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        cloud.google.com/gke-os-distribution: cos
+      volumes:
+      - hostPath:
+          path: /
+        name: host
+      - hostPath:
+          path: /var/log
+        name: varlog
+      - hostPath:
+          path: /usr/lib64
+        name: libsystemddir
+      - configMap:
+          defaultMode: 420
+          name: fluentd-gcp-config-cos-auditd
+        name: config-volume
+      initContainers:
+      - name: cos-auditd-setup
+        image: ubuntu
+        command: ["chroot", "/host", "systemctl", "start", "cloud-audit-setup"]
+        volumeMounts:
+        - name: host
+          mountPath: /host
+        resources:
+          requests:
+            memory: "10Mi"
+            cpu: "10m"
+      containers:
+      - name: fluentd-gcp-cos-auditd
+        command:
+        - /bin/sh
+        - -c
+        - /run.sh $FLUENTD_ARGS 2>&1 >>/var/log/fluentd-audit.log
+        env:
+        - name: FLUENTD_ARGS
+          value: --no-supervisor
+        image: k8s.gcr.io/fluentd-gcp:2.0.18
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then
+                exit 1;
+              fi; LAST_MODIFIED_DATE=`stat /var/log/fluentd-buffers | grep Modify | sed -r "s/Modify: (.*)/\1/"`; LAST_MODIFIED_TIMESTAMP=`date -d "$LAST_MODIFIED_DATE" +%s`; if [ `date +%s` -gt `expr $LAST_MODIFIED_TIMESTAMP + $STUCK_THRESHOLD_SECONDS` ]; then
+                rm -rf /var/log/fluentd-buffers;
+                exit 1;
+              fi; if [ `date +%s` -gt `expr $LAST_MODIFIED_TIMESTAMP + $LIVENESS_THRESHOLD_SECONDS` ]; then
+                exit 1;
+              fi;
+          failureThreshold: 3
+          initialDelaySeconds: 600
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 800Mi
+          requests:
+            cpu: 100m
+            memory: 800Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/log
+          name: varlog
+        - mountPath: /host/lib
+          name: libsystemddir
+          readOnly: true
+        - mountPath: /etc/fluent/config.d
+          name: config-volume
+      dnsPolicy: Default
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node.alpha.kubernetes.io/ismaster
+      - effect: NoExecute
+        operator: Exists
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: fluentd-gcp-config-cos-auditd
+  namespace: cos-auditd
+  annotations:
+    kubernetes.io/description: 'ConfigMap for Linux auditd logging daemonset on COS nodes.'
+data:
+  system.input.conf: |-
+    <source>
+      type systemd
+      filters [{ "SYSLOG_IDENTIFIER": "audit" }]
+      pos_file /var/log/gcp-journald-audit.pos
+      read_from_head true
+      tag linux-auditd
+    </source>
+  output.conf: |-
+    <match **>
+      @type copy
+
+      <store>
+        @type google_cloud
+
+        detect_subservice false
+        buffer_type file
+        buffer_path /var/log/fluentd-buffers/system.audit.buffer
+        buffer_queue_full_action block
+        buffer_chunk_limit 2M
+        buffer_queue_limit 6
+        flush_interval 5s
+        max_retry_wait 30
+        disable_retry_limit
+        num_threads 2
+      </store>
+      <store>
+        @type prometheus
+
+        <metric>
+          type counter
+          name logging_entry_count
+          desc Total number of log entries generated
+          <labels>
+            component system
+          </labels>
+        </metric>
+      </store>
+    </match>
