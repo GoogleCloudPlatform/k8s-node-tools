@@ -65,14 +65,13 @@ spec:
             cpu: "10m"
       containers:
       - name: fluentd-gcp-cos-auditd
-        command:
-        - /bin/sh
-        - -c
-        - /run.sh $FLUENTD_ARGS 2>&1 >>/var/log/fluentd-audit.log
         env:
-        - name: FLUENTD_ARGS
-          value: --no-supervisor
-        image: k8s.gcr.io/fluentd-gcp:2.0.18
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: gcr.io/stackdriver-agents/stackdriver-logging-agent:0.6-1.6.0-1
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
@@ -82,10 +81,10 @@ spec:
             - |
               LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-900}; if [ ! -e /var/log/fluentd-buffers ]; then
                 exit 1;
-              fi; LAST_MODIFIED_DATE=`stat /var/log/fluentd-buffers | grep Modify | sed -r "s/Modify: (.*)/\1/"`; LAST_MODIFIED_TIMESTAMP=`date -d "$LAST_MODIFIED_DATE" +%s`; if [ `date +%s` -gt `expr $LAST_MODIFIED_TIMESTAMP + $STUCK_THRESHOLD_SECONDS` ]; then
+              fi; touch -d "${STUCK_THRESHOLD_SECONDS} seconds ago" /tmp/marker-stuck; if [[ -z "$(find /var/log/fluentd-buffers -type f -newer /tmp/marker-stuck -print -quit)" ]]; then
                 rm -rf /var/log/fluentd-buffers;
                 exit 1;
-              fi; if [ `date +%s` -gt `expr $LAST_MODIFIED_TIMESTAMP + $LIVENESS_THRESHOLD_SECONDS` ]; then
+              fi; touch -d "${LIVENESS_THRESHOLD_SECONDS} seconds ago" /tmp/marker-liveness; if [[ -z "$(find /var/log/fluentd-buffers -type f -newer /tmp/marker-liveness -print -quit)" ]]; then
                 exit 1;
               fi;
           failureThreshold: 3
@@ -95,10 +94,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 800Mi
+            cpu: "1"
+            memory: 500Mi
           requests:
             cpu: 100m
-            memory: 800Mi
+            memory: 200Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -107,7 +107,8 @@ spec:
         - mountPath: /host/lib
           name: libsystemddir
           readOnly: true
-        - mountPath: /etc/fluent/config.d
+        - mountPath: /etc/google-fluentd/google-fluentd.conf
+          subPath: google-fluentd.conf
           name: config-volume
       dnsPolicy: Default
       restartPolicy: Always
@@ -130,42 +131,34 @@ metadata:
   annotations:
     kubernetes.io/description: 'ConfigMap for Linux auditd logging daemonset on COS nodes.'
 data:
-  system.input.conf: |-
+  google-fluentd.conf: |-
     <source>
-      type systemd
+      @type systemd
       filters [{ "SYSLOG_IDENTIFIER": "audit" }]
       pos_file /var/log/gcp-journald-audit.pos
       read_from_head true
       tag linux-auditd
     </source>
-  output.conf: |-
+
+    # Do not collect fluentd's own logs to avoid infinite loops.
+    <match fluent.**>
+      @type null
+    </match>
+
     <match **>
-      @type copy
+      @type google_cloud
 
-      <store>
-        @type google_cloud
-
-        detect_subservice false
-        buffer_type file
-        buffer_path /var/log/fluentd-buffers/system.audit.buffer
-        buffer_queue_full_action block
-        buffer_chunk_limit 2M
-        buffer_queue_limit 6
-        flush_interval 5s
-        max_retry_wait 30
-        disable_retry_limit
-        num_threads 2
-      </store>
-      <store>
-        @type prometheus
-
-        <metric>
-          type counter
-          name logging_entry_count
-          desc Total number of log entries generated
-          <labels>
-            component system
-          </labels>
-        </metric>
-      </store>
+      enable_monitoring false
+      split_logs_by_tag false
+      detect_subservice false
+      buffer_type file
+      buffer_path /var/log/fluentd-buffers/system.audit.buffer
+      buffer_queue_full_action block
+      buffer_chunk_limit 512k
+      buffer_queue_limit 2
+      flush_interval 5s
+      max_retry_wait 30
+      disable_retry_limit
+      num_threads 2
+      use_grpc true
     </match>
