@@ -36,6 +36,7 @@ spec:
         name: cos-auditd-logging
     spec:
       hostNetwork: true
+      hostPID: true
       nodeSelector:
         cloud.google.com/gke-os-distribution: cos
       volumes:
@@ -56,6 +57,8 @@ spec:
       - name: cos-auditd-setup
         image: ubuntu
         command: ["chroot", "/host", "systemctl", "start", "cloud-audit-setup"]
+        securityContext:
+          privileged: true
         volumeMounts:
         - name: host
           mountPath: /host
