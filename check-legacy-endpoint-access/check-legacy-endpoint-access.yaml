@@ -1,0 +1,58 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: check-legacy-endpoint-access
+  namespace: kube-system
+  labels:
+    app: check-legacy-endpoint-access
+spec:
+  selector:
+    matchLabels:
+      app: check-legacy-endpoint-access
+  template:
+    metadata:
+      labels:
+        app: check-legacy-endpoint-access
+    spec:
+      hostNetwork: true
+      containers:
+      - name: check-legacy-endpoint-access
+        image: gcr.io/distroless/python3
+        command:
+          - python
+          - -c
+          - |
+              from urllib.request import Request, urlopen
+              from datetime import datetime
+              from time import sleep
+
+              def curl(url):
+                request = Request(url)
+                request.add_header('Metadata-Flavor', 'Google')
+                response = urlopen(request).read()
+                return str(response, 'utf-8')
+
+              hostname = curl('http://169.254.169.254/computeMetadata/v1/instance/hostname')
+              while True:
+                v01_count = curl('http://169.254.169.254/computeMetadata/v1/instance/legacy-endpoint-access/0.1')
+                v1beta1_count = curl('http://169.254.169.254/computeMetadata/v1/instance/legacy-endpoint-access/v1beta1')
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                print("{} for node {}, legacy access count of computeMetadata/0.1 is: {}, legacy access count of computeMetadata/v1beta1 is: {}".format(now, hostname, v01_count, v1beta1_count), flush=True)
+
+                sleep(300)
+
