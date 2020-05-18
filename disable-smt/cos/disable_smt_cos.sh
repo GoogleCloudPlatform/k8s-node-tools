@@ -16,8 +16,31 @@
 
 set -e
 
+# Exits if the system uses secure boot.
+function check_not_secure_boot() {
+  if [[ ! -d "/sys/firmware/efi" ]]; then
+    return
+  fi
+
+  efi="$(mktemp -d)"
+  mount -t efivarfs none "${efi}"
+
+  # Read the secure boot variable.
+  secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
+
+  # Clean up
+  umount "${efi}"
+  rmdir "${efi}"
+
+  # https://wiki.archlinux.org/index.php/Secure_Boot
+  if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
+    echo "Secure Boot is enabled. Boot options cannot be changed."
+    exit 1
+  fi
+}
+
 # Disable SMT and reboot if SMT is currently enabled
-disable_smt() {
+function disable_smt() {
   if grep " nosmt " /proc/cmdline > /dev/null; then
     echo "'nosmt' already present on the kernel command line. Nothing to do."
     return
@@ -27,6 +50,8 @@ disable_smt() {
     echo "This script must be run as root."
     return 1
   fi
+  check_not_secure_boot
+
   dir="$(mktemp -d)"
   mount /dev/sda12 "${dir}"
   sed -i -e "s|cros_efi|cros_efi nosmt|g" "${dir}/efi/boot/grub.cfg"

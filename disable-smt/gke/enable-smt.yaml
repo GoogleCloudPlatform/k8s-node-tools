@@ -55,6 +55,27 @@ spec:
         - /bin/bash
         - -c
         - |
+          function check_not_secure_boot() {
+            if [[ ! -d "/sys/firmware/efi" ]]; then
+              return
+            fi
+
+            efi="$(mktemp -d)"
+            mount -t efivarfs none "${efi}"
+
+            # Read the secure boot variable.
+            secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
+
+            # Clean up
+            umount "${efi}"
+            rmdir "${efi}"
+
+            # https://wiki.archlinux.org/index.php/Secure_Boot
+            if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
+              echo "Secure Boot is enabled. Boot options cannot be changed."
+              exit 1
+            fi
+          }
           function enable_smt_cos {
             local -r dir="$(mktemp -d)"
             mount /dev/sda12 "${dir}"
@@ -72,6 +93,7 @@ spec:
             fi
             source /host/etc/os-release
             echo "Attempting to enable SMT for ${NAME}"
+            check_not_secure_boot
             case "${NAME}" in
               "Container-Optimized OS") enable_smt_cos;;
               "Ubuntu") enable_smt_ubuntu;;
