@@ -1,0 +1,92 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: enable-kdump
+  labels:
+    app: enable-kdump
+spec:
+  selector:
+    matchLabels:
+      name: enable-kdump
+  template:
+    metadata:
+      labels:
+        name: enable-kdump
+    spec:
+      nodeSelector:
+        "cloud.google.com/gke-os-distribution": "ubuntu"
+        "enable-kdump": "true"
+      hostPID: true
+      containers:
+        - name: enable-kdump
+          image: debian
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          command:
+            - /usr/bin/nsenter
+            - -t 1
+            - -m
+            - -u
+            - -i
+            - -n
+            - -p
+            - --
+            - /bin/bash
+            - -c
+            - |
+
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+
+              function check_kdump() {
+                  local kdump_show
+                  kdump_show=$(kdump-config show)
+                  if echo "${kdump_show}" | grep -q "ready to kdump"; then
+                      echo "ready to kdump!"
+
+                      echo "setting sysctls"
+                      sysctl -w kernel.hung_task_panic=1
+                      sysctl -w kernel.hung_task_timeout_secs=20
+                      echo "sysctls are set"
+                  else
+                      echo "kdump not setup, isn't ready"
+                  fi
+                  echo "kdump-config show ==> ${kdump_show}"
+                  echo "/proc/cmdline ==> $(cat /proc/cmdline)"
+              }
+
+              function install() {
+                  echo "installing kdump"
+                  apt-get update
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y linux-crashdump
+                  echo "kdump enabled; waiting for reboot in 10 secs..."
+                  ( sleep 10 && reboot ) &
+
+                  while true; do
+                      echo "$(date '+%Y-%m-%dT%H:%M:%SZ') waiting for reboot..."
+                      sleep 1
+                  done
+              }
+
+              if command -v "kdump-config" &> /dev/null; then
+                  check_kdump
+                  sleep 10
+              else
+                  install
+              fi
