@@ -1,0 +1,74 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+#
+# Change TARGET_PGREP below to names of processes to trace.
+# Also change KERNEL_VERSION below to version being tested.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: enable-perf-record
+  labels:
+    app: enable-perf-record
+spec:
+  selector:
+    matchLabels:
+      name: enable-perf-record
+  template:
+    metadata:
+      labels:
+        name: enable-perf-record
+    spec:
+      nodeSelector:
+        "enable-perf": "true"
+      hostPID: true
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+      containers:
+        - name: enable-perf-record
+          image: debian
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: host
+              mountPath: /host
+          securityContext:
+            privileged: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+
+              KERNEL_VERSION="5.0.0"
+
+              apt-get update && apt-get install -y curl procps daemontools build-essential bison flex libelf-dev binutils-dev
+              curl -O https://mirrors.edge.kernel.org/pub/linux/kernel/tools/perf/v"${KERNEL_VERSION}"/perf-"${KERNEL_VERSION}".tar.gz
+              tar xzf perf-"${KERNEL_VERSION}".tar.gz
+              make -C perf-"${KERNEL_VERSION}"/tools/perf install
+              PERF="/root/bin/perf"
+
+              d=$(date '+%Y-%m-%dT%H:%M:%SZ')
+              out_dir="/host/var/log/perf_record/${d}"
+              mkdir -p "${out_dir}"
+              cd "${out_dir}"
+              echo "starting perf recording! will dump to ${out_dir}"
+
+              "${PERF}" record -F 999 -g --timestamp-filename --switch-output="10s" > /dev/null
