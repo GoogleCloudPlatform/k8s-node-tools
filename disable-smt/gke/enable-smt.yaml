@@ -50,11 +50,12 @@ spec:
           path: /
       initContainers:
       - name: enable-smt
-        image: ubuntu
+        image: bash
         command:
-        - /bin/bash
+        - /usr/local/bin/bash
         - -c
         - |
+          set -euo pipefail
           function check_not_secure_boot() {
             if [[ ! -d "/sys/firmware/efi" ]]; then
               return
