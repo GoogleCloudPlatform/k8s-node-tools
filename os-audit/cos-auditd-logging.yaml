@@ -121,6 +121,10 @@ spec:
         key: node.alpha.kubernetes.io/ismaster
       - effect: NoExecute
         operator: Exists
+      - effect: NoSchedule
+        key: sandbox.gke.io/runtime
+        operator: Equal
+        value: gvisor
   updateStrategy:
     rollingUpdate:
       maxUnavailable: 1
