@@ -7,18 +7,46 @@ do
   for clusters in $( \
     gcloud container clusters list \
       --project $project \
-      --format="csv[no-heading](name,location,autopilot.enabled)")
+      --format="csv[no-heading](name,location,autopilot.enabled,currentMasterVersion,autoscaling.enableNodeAutoprovisioning,autoscaling.autoprovisioningNodePoolDefaults.imageType)")
   do
     IFS=',' read -r -a clustersArray <<< "$clusters"
     cluster_name="${clustersArray[0]}"
     cluster_zone="${clustersArray[1]}"
     cluster_isAutopilot="${clustersArray[2]}"
+    cluster_version="${clustersArray[3]}"
+    cluster_minorVersion=${cluster_version:0:4}
+    cluster_autoprovisioning="${clustersArray[4]}"
+    cluster_autoprovisioningImageType="${clustersArray[5]}"
 
     if [ "$cluster_isAutopilot" = "True" ]; then
       echo "  Cluster: $cluster_name (autopilot) (zone: $cluster_zone)"
       echo "    Autopilot clusters are running Containerd."
     else
       echo "  Cluster: $cluster_name (zone: $cluster_zone)"
+
+      if [ "$cluster_autoprovisioning" = "True" ]; then
+        if [ "$cluster_minorVersion"  \< "1.20" ]; then
+          echo "    Node autoprovisioning is enabled, and new node pools will have image type 'COS'."
+          echo "    This settings is not configurable on the current version of a cluster."
+          echo "    Please upgrade you cluster and configure the default node autoprovisioning image type."
+          echo "    "
+        else
+          if [ "$cluster_autoprovisioningImageType" = "COS" ]; then
+            echo "    Node autoprovisioning is configured to create new node pools of type 'COS'."
+            echo "    Run the following command to update:"
+            echo "    gcloud container clusters update '$cluster_name' --project '$project' --zone '$cluster_zone' --enable-autoprovisioning --autoprovisioning-image-type='COS_CONTAINERD'"
+            echo "    "
+          fi
+
+          if [ "$cluster_autoprovisioningImageType" = "UBUNTU" ]; then
+            echo "    Node autoprovisioning is configured to create new node pools of type 'UBUNTU'."
+            echo "    Run the following command to update:"
+            echo "    gcloud container clusters update '$cluster_name' --project '$project' --zone '$cluster_zone' --enable-autoprovisioning --autoprovisioning-image-type='UBUNTU_CONTAINERD'"
+            echo "    "
+          fi
+        fi
+      fi
+
       for nodepools in $( \
         gcloud container node-pools list \
           --project $project \
