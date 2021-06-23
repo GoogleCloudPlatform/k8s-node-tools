@@ -63,10 +63,18 @@ do
 
         echo "    Nodepool: $nodepool_name, version: $nodepool_version ($nodepool_minorVersion), image: $nodepool_imageType"
 
+        minorVersionWithRev="${nodepool_version/-gke./.}"
+        linuxGkeMinVersion="1.14"
+        windowsGkeMinVersion="1.21.1.2200"
+
         suggestedImageType="COS_CONTAINERD"
 
         if [ "$nodepool_imageType" = "UBUNTU" ]; then
           suggestedImageType="UBUNTU_CONTAINERD"
+        elif [ "$nodepool_imageType" = "WINDOWS_LTSC" ]; then
+          suggestedImageType="WINDOWS_LTSC_CONTAINERD"
+        elif [ "$nodepool_imageType" = "WINDOWS_SAC" ]; then
+          suggestedImageType="WINDOWS_SAC_CONTAINERD"
         fi
 
         tab=$'\n      ';
@@ -78,11 +86,13 @@ do
         nodepool_message+="$tab "
 
         # see https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
-        if [ "$nodepool_imageType" = "COS_CONTAINERD" ] || [ "$nodepool_imageType" = "UBUNTU_CONTAINERD" ]; then
+        if [ "$nodepool_imageType" = "COS_CONTAINERD" ] || [ "$nodepool_imageType" = "UBUNTU_CONTAINERD" ] ||
+           [ "$nodepool_imageType" = "WINDOWS_LTSC_CONTAINERD" ] || [ "$nodepool_imageType" = "WINDOWS_SAC_CONTAINERD" ]; then
           nodepool_message="$tab Nodepool is using Containerd already"
-        elif [ "$nodepool_imageType" = "WINDOWS_LTSC" ] || [ "$nodepool_imageType" = "WINDOWS_SAC" ]; then
-          nodepool_message="$tab Containerd is not currently available for Windows nodepools"
-        elif [ "$nodepool_minorVersion" \< "1.14" ]; then
+        elif ( [ "$nodepool_imageType" = "WINDOWS_LTSC" ] || [ "$nodepool_imageType" = "WINDOWS_SAC" ] ) &&
+               !( [ "$(printf '%s\n' "$windowsGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" = "$windowsGkeMinVersion" ] ); then
+          nodepool_message="$tab Upgrade nodepool to the version that supports Containerd for Windows"
+        elif !( [ "$(printf '%s\n' "$linuxGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" = "$linuxGkeMinVersion" ] ); then
           nodepool_message="$tab Upgrade nodepool to the version that supports Containerd"
         fi
         echo "$nodepool_message"
@@ -112,6 +122,10 @@ done
 #       Run the following command to upgrade:
 #
 #       gcloud container clusters upgrade 'cluster-1' --project 'my-project-id' --zone 'us-central1-c' --image-type 'COS_CONTAINERD' --node-pool 'pool-1'
+#
+#    Nodepool: winpool, version: 1.18.12-gke.1210 (1.18), image: WINDOWS_SAC
+#
+#       Upgrade nodepool to the version that supports Containerd for Windows
 #
 #  Cluster: another-test-cluster (zone: us-central1-c)
 #    Nodepool: default-pool, version: 1.20.4-gke.400 (1.20), image: COS_CONTAINERD
