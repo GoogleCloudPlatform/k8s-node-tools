@@ -19,12 +19,6 @@
 # WARNING: Disabling hyper-threading might have severe performance impact on
 # your clusters and application. Please ensure that this is acceptable before
 # deploying this to your production clusters.
-#
-# WARNING: Disabling hyper-threading requires node reboot. Therefore, in order
-# to avoid disrupting your workloads, it is recommended to create a new node
-# pool with the "cloud.google.com/gke-smt-disabled=true" label in your cluster,
-# deploy the DaemonSet to disable hyper-threading in that node pool, and then
-# migrate your workloads to the new node pool.
 
 apiVersion: apps/v1
 kind: DaemonSet
@@ -42,79 +36,35 @@ spec:
       labels:
         name: disable-smt
     spec:
+      hostNetwork: true
+      hostPID: true
       tolerations:
       - operator: Exists
-      volumes:
-      - name: host
-        hostPath:
-          path: /
       initContainers:
       - name: disable-smt
         image: ubuntu
+        securityContext:
+          runAsUser: 0
+          privileged: true
         command:
+        - chroot
+        - /root
         - /bin/bash
         - -c
         - |
-          function check_not_secure_boot() {
-            if [[ ! -d "/sys/firmware/efi" ]]; then
-            return
-            fi
+          SMT_CONTROL_PATH=/sys/devices/system/cpu/smt/control
+          echo "off" > "${SMT_CONTROL_PATH}"
+          echo "wrote \"off\" to ${SMT_CONTROL_PATH}"
 
-            efi="$(mktemp -d)"
-            mount -t efivarfs none "${efi}"
-
-            # Read the secure boot variable.
-            secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
-
-            # Clean up
-            umount "${efi}"
-            rmdir "${efi}"
-
-            # https://wiki.archlinux.org/index.php/Secure_Boot
-            if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
-            echo "Secure Boot is enabled. Boot options cannot be changed."
-            exit 1
-            fi
-          }
-
-          function disable_smt_cos {
-            local -r dir="$(mktemp -d)"
-            mount /dev/sda12 "${dir}"
-            sed -i -e "s|cros_efi|cros_efi nosmt|g" "${dir}/efi/boot/grub.cfg"
-            umount "${dir}"
-            rmdir "${dir}"
-          }
-          function disable_smt_ubuntu {
-            echo 'GRUB_CMDLINE_LINUX_DEFAULT="nosmt ${GRUB_CMDLINE_LINUX_DEFAULT}"' > /host/etc/default/grub.d/99-nosmt.cfg
-            chroot /host /usr/sbin/update-grub
-          }
-          function disable_smt {
-            if grep " nosmt " /proc/cmdline; then
-              echo "SMT has been disabled"
-              return
-            fi
-
-            source /host/etc/os-release
-            echo "Attempting to disable SMT for ${NAME}"
-            check_not_secure_boot
-            case "${NAME}" in
-              "Ubuntu") disable_smt_ubuntu;;
-              "Container-Optimized OS") disable_smt_cos;;
-              *);;
-            esac
-            echo "SMT disabled, rebooting for it to take effect"
-            chroot /host systemctl reboot
-          }
-          disable_smt
+          # Restart kubelet so it picks up changes to # of CPUs.
+          echo "restarting kublet"
+          systemctl restart kubelet
+          echo "restarted kubelet"
         volumeMounts:
-        - name: host
-          mountPath: /host
-        resources:
-          requests:
-            memory: 5Mi
-            cpu: 5m
-        securityContext:
-          privileged: true
+        - mountPath: /root
+          name: root
+        - mountPath: /run
+          name: run 
       containers:
       - image: gcr.io/google-containers/pause:2.0
         name: pause
@@ -122,3 +72,12 @@ spec:
       # label.
       nodeSelector:
         "cloud.google.com/gke-smt-disabled": "true"
+      volumes:  
+      - hostPath:
+          path: /
+          type: ""
+        name: root
+      - hostPath:
+          path: /run
+          type: ""
+        name: run
