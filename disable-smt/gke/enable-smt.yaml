@@ -13,109 +13,57 @@
 # limitations under the License.
 
 
-# Deploy this DaemonSet to enable hyper-threading on the nodes with the
-# "cloud.google.com/gke-smt-disabled=false" label.
+# Deploy this DaemonSet to disable hyper-threading on the nodes with the
+# "cloud.google.com/gke-smt-disabled=true" label.
 #
-# WARNING: Enabling hyper-threading may make the node vulnerable to 
-# Microarchitectural Data Sampling (MDS). Please ensure that this is acceptable
-# before deploying this to your production clusters.
-#
-# WARNING: Enabling hyper-threading requires node reboot. Therefore, in order
-# to avoid disrupting your workloads, it is recommended to create a new node
-# pool with the "cloud.google.com/gke-smt-disabled=false" label in your cluster,
-# deploy the DaemonSet to enable hyper-threading in that node pool, and then
-# migrate your workloads to the new node pool.
+# WARNING: Disabling hyper-threading might have severe performance impact on
+# your clusters and application. Please ensure that this is acceptable before
+# deploying this to your production clusters.
 
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: enable-smt
+  name: disable-smt
   namespace: kube-system
 spec:
   selector:
     matchLabels:
-      name: enable-smt
+      name: disable-smt
   updateStrategy:
     type: RollingUpdate
   template:
     metadata:
       labels:
-        name: enable-smt
+        name: disable-smt
     spec:
+      hostNetwork: true
+      hostPID: true
       tolerations:
       - operator: Exists
-      volumes:
-      - name: host
-        hostPath:
-          path: /
       initContainers:
-      - name: enable-smt
-        image: bash
+      - name: disable-smt
+        image: ubuntu
+        securityContext:
+          runAsUser: 0
+          privileged: true
         command:
-        - /usr/local/bin/bash
+        - chroot
+        - /root
+        - /bin/bash
         - -c
         - |
-          set -euo pipefail
-          function check_not_secure_boot() {
-            if [[ ! -d "/sys/firmware/efi" ]]; then
-              return
-            fi
+          echo "on" > "${SMT_CONTROL_PATH}"
+          echo "wrote \"off\" to ${SMT_CONTROL_PATH}"
 
-            efi="$(mktemp -d)"
-            mount -t efivarfs none "${efi}"
-
-            # Read the secure boot variable.
-            secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
-
-            # Clean up
-            umount "${efi}"
-            rmdir "${efi}"
-
-            # https://wiki.archlinux.org/index.php/Secure_Boot
-            if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
-              echo "Secure Boot is enabled. Boot options cannot be changed."
-              exit 1
-            fi
-          }
-          function enable_smt_cos {
-            local -r dir="$(mktemp -d)"
-            mount /dev/sda12 "${dir}"
-            sed -i -e "s| nosmt||g" "${dir}/efi/boot/grub.cfg"
-            umount "${dir}"
-            rmdir "${dir}"
-          }
-          function enable_smt_ubuntu {
-            rm /host/etc/default/grub.d/99-nosmt.cfg
-          }
-          function enable_smt {
-            if [[ ! $(grep " nosmt " /proc/cmdline) ]]; then
-              echo "SMT has been enabled"
-              return
-            fi
-            source /host/etc/os-release
-            echo "Attempting to enable SMT for ${NAME}"
-            check_not_secure_boot
-            case "${NAME}" in
-              "Container-Optimized OS") enable_smt_cos;;
-              "Ubuntu") enable_smt_ubuntu;;
-              *)
-                echo "${NAME} is not supported"
-                exit 1
-                ;;
-            esac
-            echo "SMT enabled, rebooting for it to take effect"
-            chroot /host systemctl reboot
-          }
-          enable_smt
+          # Restart kubelet so it picks up changes to # of CPUs.
+          echo "restarting kublet"
+          systemctl restart kubelet
+          echo "restarted kubelet"
         volumeMounts:
-        - name: host
-          mountPath: /host
-        resources:
-          requests:
-            memory: 5Mi
-            cpu: 5m
-        securityContext:
-          privileged: true
+        - mountPath: /root
+          name: root
+        - mountPath: /run
+          name: run
       containers:
       - image: gcr.io/google-containers/pause:2.0
         name: pause
@@ -123,3 +71,12 @@ spec:
       # label.
       nodeSelector:
         "cloud.google.com/gke-smt-disabled": "false"
+      volumes:
+      - hostPath:
+          path: /
+          type: ""
+        name: root
+      - hostPath:
+          path: /run
+          type: ""
+        name: run
