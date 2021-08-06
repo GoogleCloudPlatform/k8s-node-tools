@@ -16,6 +16,7 @@
 
 set -e
 
+SMT_CONROL_PATH=/sys/devices/system/cpu/smt/control
 echo "off" > "${SMT_CONTROL_PATH}"
 echo "wrote \"off\" to ${SMT_CONTROL_PATH}"
 
