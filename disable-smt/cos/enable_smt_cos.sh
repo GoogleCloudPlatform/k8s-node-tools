@@ -17,10 +17,6 @@
 set -eou pipefail
 
 SMT_CONTROL_PATH=/sys/devices/system/cpu/smt/control 
-<<<<<<< HEAD
-=======
-# Exits if the system uses secure boot.
->>>>>>> 040ecc38a2c23768b819b555f2587d8cde205ac2
 echo "on" > "${SMT_CONTROL_PATH}"
 echo "wrote \"off\" to ${SMT_CONTROL_PATH}"
 
