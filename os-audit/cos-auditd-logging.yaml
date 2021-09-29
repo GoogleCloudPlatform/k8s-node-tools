@@ -74,7 +74,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: gcr.io/stackdriver-agents/stackdriver-logging-agent:0.6-1.6.0-1
+        image: gcr.io/stackdriver-agents/stackdriver-logging-agent:1.9.0
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
