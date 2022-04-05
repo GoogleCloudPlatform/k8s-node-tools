@@ -26,6 +26,13 @@
 # deploy the DaemonSet to enable hyper-threading in that node pool, and then
 # migrate your workloads to the new node pool.
 
+#
+# NOTE:
+# It's recommended to use the --threads-per-core flag on the node-pool to
+# configure SMT setting on nodes.
+# https://cloud.google.com/kubernetes-engine/docs/how-to/configure-smt
+#
+
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -49,64 +56,15 @@ spec:
         hostPath:
           path: /
       initContainers:
-      - name: enable-smt
+      - name: smt
         image: bash
         command:
         - /usr/local/bin/bash
         - -c
-        - |
-          set -euo pipefail
-          function check_not_secure_boot() {
-            if [[ ! -d "/sys/firmware/efi" ]]; then
-              return
-            fi
-
-            efi="$(mktemp -d)"
-            mount -t efivarfs none "${efi}"
-
-            # Read the secure boot variable.
-            secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
-
-            # Clean up
-            umount "${efi}"
-            rmdir "${efi}"
-
-            # https://wiki.archlinux.org/index.php/Secure_Boot
-            if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
-              echo "Secure Boot is enabled. Boot options cannot be changed."
-              exit 1
-            fi
-          }
-          function enable_smt_cos {
-            local -r dir="$(mktemp -d)"
-            mount /dev/sda12 "${dir}"
-            sed -i -e "s| nosmt||g" "${dir}/efi/boot/grub.cfg"
-            umount "${dir}"
-            rmdir "${dir}"
-          }
-          function enable_smt_ubuntu {
-            rm /host/etc/default/grub.d/99-nosmt.cfg
-          }
-          function enable_smt {
-            if [[ ! $(grep " nosmt " /proc/cmdline) ]]; then
-              echo "SMT has been enabled"
-              return
-            fi
-            source /host/etc/os-release
-            echo "Attempting to enable SMT for ${NAME}"
-            check_not_secure_boot
-            case "${NAME}" in
-              "Container-Optimized OS") enable_smt_cos;;
-              "Ubuntu") enable_smt_ubuntu;;
-              *)
-                echo "${NAME} is not supported"
-                exit 1
-                ;;
-            esac
-            echo "SMT enabled, rebooting for it to take effect"
-            chroot /host systemctl reboot
-          }
-          enable_smt
+        -  |
+          echo "SMT is set to $(cat /host/sys/devices/system/cpu/smt/control)"
+          echo "Setting SMT to on";
+          echo -n "on" > /host/sys/devices/system/cpu/smt/control
         volumeMounts:
         - name: host
           mountPath: /host
@@ -117,7 +75,7 @@ spec:
         securityContext:
           privileged: true
       containers:
-      - image: gcr.io/google-containers/pause:2.0
+      - image: gcr.io/google-containers/pause:3.2
         name: pause
       # Ensures that the pods will only run on the nodes having the certain
       # label.

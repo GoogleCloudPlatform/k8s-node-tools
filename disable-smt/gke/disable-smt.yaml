@@ -26,6 +26,13 @@
 # deploy the DaemonSet to disable hyper-threading in that node pool, and then
 # migrate your workloads to the new node pool.
 
+#
+# NOTE:
+# It's recommended to use the --threads-per-core flag on the node-pool to
+# configure SMT setting on nodes.
+# https://cloud.google.com/kubernetes-engine/docs/how-to/configure-smt
+#
+
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -49,63 +56,15 @@ spec:
         hostPath:
           path: /
       initContainers:
-      - name: disable-smt
-        image: ubuntu
+      - name: smt
+        image: bash
         command:
-        - /bin/bash
+        - /usr/local/bin/bash
         - -c
-        - |
-          function check_not_secure_boot() {
-            if [[ ! -d "/sys/firmware/efi" ]]; then
-            return
-            fi
-
-            efi="$(mktemp -d)"
-            mount -t efivarfs none "${efi}"
-
-            # Read the secure boot variable.
-            secure_boot="$(hexdump -v -e '/1 "%02X "' ${efi}/SecureBoot-*)"
-
-            # Clean up
-            umount "${efi}"
-            rmdir "${efi}"
-
-            # https://wiki.archlinux.org/index.php/Secure_Boot
-            if [[ "${secure_boot}" == "06 00 00 00 01 " ]]; then
-            echo "Secure Boot is enabled. Boot options cannot be changed."
-            exit 1
-            fi
-          }
-
-          function disable_smt_cos {
-            local -r dir="$(mktemp -d)"
-            mount /dev/sda12 "${dir}"
-            sed -i -e "s|cros_efi|cros_efi nosmt|g" "${dir}/efi/boot/grub.cfg"
-            umount "${dir}"
-            rmdir "${dir}"
-          }
-          function disable_smt_ubuntu {
-            echo 'GRUB_CMDLINE_LINUX_DEFAULT="nosmt ${GRUB_CMDLINE_LINUX_DEFAULT}"' > /host/etc/default/grub.d/99-nosmt.cfg
-            chroot /host /usr/sbin/update-grub
-          }
-          function disable_smt {
-            if grep " nosmt " /proc/cmdline; then
-              echo "SMT has been disabled"
-              return
-            fi
-
-            source /host/etc/os-release
-            echo "Attempting to disable SMT for ${NAME}"
-            check_not_secure_boot
-            case "${NAME}" in
-              "Ubuntu") disable_smt_ubuntu;;
-              "Container-Optimized OS") disable_smt_cos;;
-              *);;
-            esac
-            echo "SMT disabled, rebooting for it to take effect"
-            chroot /host systemctl reboot
-          }
-          disable_smt
+        -  |
+          echo "SMT is set to $(cat /host/sys/devices/system/cpu/smt/control)";
+          echo "Setting SMT to off";
+          echo -n "off" > /host/sys/devices/system/cpu/smt/control
         volumeMounts:
         - name: host
           mountPath: /host
@@ -116,7 +75,7 @@ spec:
         securityContext:
           privileged: true
       containers:
-      - image: gcr.io/google-containers/pause:2.0
+      - image: gcr.io/google-containers/pause:3.2
         name: pause
       # Ensures that the pods will only run on the nodes having the certain
       # label.
