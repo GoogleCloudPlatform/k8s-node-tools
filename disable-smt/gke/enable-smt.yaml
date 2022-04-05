@@ -62,7 +62,7 @@ spec:
         command:
         - /usr/local/bin/bash
         - -c
-        -  |
+        - |
           set -euo pipefail
           echo "SMT is set to $(cat /host/sys/devices/system/cpu/smt/control)"
           echo "Setting SMT to on";
