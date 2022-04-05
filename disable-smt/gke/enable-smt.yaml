@@ -55,6 +55,7 @@ spec:
       - name: host
         hostPath:
           path: /
+      hostPID: true
       initContainers:
       - name: smt
         image: bash
@@ -62,9 +63,12 @@ spec:
         - /usr/local/bin/bash
         - -c
         -  |
+          set -euo pipefail
           echo "SMT is set to $(cat /host/sys/devices/system/cpu/smt/control)"
           echo "Setting SMT to on";
           echo -n "on" > /host/sys/devices/system/cpu/smt/control
+          echo "Restarting Kubelet..."
+          chroot /host nsenter --target=1 --all -- systemctl restart kubelet.service
         volumeMounts:
         - name: host
           mountPath: /host
