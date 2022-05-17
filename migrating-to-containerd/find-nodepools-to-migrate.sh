@@ -1,14 +1,16 @@
 #!/bin/bash
 
 # [START gke_node_find_non_containerd_nodepools]
-for project in  $(gcloud projects list --format="value(projectId)")
+for project in  $(gcloud projects list --format="value(projectId)" --filter="- projectId:sys-*")
 do
-  echo "ProjectId:  $project"
   for clusters in $( \
     gcloud container clusters list \
       --project $project \
       --format="csv[no-heading](name,location,autopilot.enabled,currentMasterVersion,autoscaling.enableNodeAutoprovisioning,autoscaling.autoprovisioningNodePoolDefaults.imageType)")
   do
+    printf '=%.0s' $(seq 1 $(tput cols))    
+    echo "ProjectId:  $project"
+
     IFS=',' read -r -a clustersArray <<< "$clusters"
     cluster_name="${clustersArray[0]}"
     cluster_zone="${clustersArray[1]}"
