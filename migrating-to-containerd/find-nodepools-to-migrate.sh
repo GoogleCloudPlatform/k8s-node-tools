@@ -9,6 +9,7 @@ do
       --format="csv[no-heading](name,location,autopilot.enabled,currentMasterVersion,autoscaling.enableNodeAutoprovisioning,autoscaling.autoprovisioningNodePoolDefaults.imageType)")
   do
     printf '=%.0s' $(seq 1 $(tput cols))    
+    echo ""
     echo "ProjectId:  $project"
 
     IFS=',' read -r -a clustersArray <<< "$clusters"
