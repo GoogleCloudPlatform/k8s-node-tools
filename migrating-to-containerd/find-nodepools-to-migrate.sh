@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # [START gke_node_find_non_containerd_nodepools]
-for project in  $(gcloud projects list --format="value(projectId)")
+for project in $(gcloud projects list --format="value(projectId)")
 do
-  echo "ProjectId:  $project"
+  echo "ProjectId: $project"
   for clusters in $( \
     gcloud container clusters list \
       --project $project \
@@ -90,9 +90,9 @@ do
            [ "$nodepool_imageType" = "WINDOWS_LTSC_CONTAINERD" ] || [ "$nodepool_imageType" = "WINDOWS_SAC_CONTAINERD" ]; then
           nodepool_message="$tab Nodepool is using Containerd already"
         elif ( [ "$nodepool_imageType" = "WINDOWS_LTSC" ] || [ "$nodepool_imageType" = "WINDOWS_SAC" ] ) &&
-               !( [ "$(printf '%s\n' "$windowsGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" = "$windowsGkeMinVersion" ] ); then
+               [ "$(printf '%s\n' "$windowsGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" != "$windowsGkeMinVersion" ]; then
           nodepool_message="$tab Upgrade nodepool to the version that supports Containerd for Windows"
-        elif !( [ "$(printf '%s\n' "$linuxGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" = "$linuxGkeMinVersion" ] ); then
+        elif [ "$(printf '%s\n' "$linuxGkeMinVersion" "$minorVersionWithRev" | sort -V | head -n1)" != "$linuxGkeMinVersion" ]; then
           nodepool_message="$tab Upgrade nodepool to the version that supports Containerd"
         fi
         echo "$nodepool_message"
