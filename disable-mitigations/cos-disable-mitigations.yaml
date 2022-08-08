@@ -1,0 +1,108 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Deploy this DaemonSet to disable all speculative execution mitigations on COS
+# GKE nodes.
+#
+# WARNING: THIS WILL MAKE YOUR CLUSTER LESS SECURE. Please think _very
+# carefully_ before deploying this DaemonSet.
+#
+# WARNING: Disabling mitigations requires node reboot. Therefore, in order to
+# avoid disrupting your workloads, it is recommended to create a new node pool
+# with the "cloud.google.com/gke-mitigations-disabled=true" label in your
+# cluster, deploy the DaemonSet to enable kdump in that node pool, and then
+# migrate your workloads to the new node pool.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: disable-mitigations
+spec:
+  selector:
+    matchLabels:
+      name: disable-mitigations
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: disable-mitigations
+    spec:
+      volumes:
+      - name: host
+        hostPath:
+          path: /
+      initContainers:
+      - name: disable-mitigations
+        image: marketplace.gcr.io/google/ubuntu2004
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            memory: 5Mi
+            cpu: 5m
+        volumeMounts:
+        - name: host
+          mountPath: /host
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -o errexit
+          set -o pipefail
+          set -o nounset
+
+          function check_not_secure_boot() {
+            if [[ ! -d "/sys/firmware/efi" ]]; then
+              return
+            fi
+            efi="$(mktemp -d)"
+            mount -t efivarfs none "${efi}"
+            secure_boot="$(cat "${efi}"/SecureBoot-* | chroot /host python -c 'import sys; print(sys.stdin.buffer.read() == b"\x06\x00\x00\x00\x01")')"
+            umount "${efi}"
+            rmdir "${efi}"
+            if [[ "${secure_boot}" == "True" ]]; then
+              echo "Secure Boot is enabled. Boot options cannot be changed."
+              exit 1
+            fi
+          }
+
+          function main() {
+            if grep " mitigations=off " /proc/cmdline > /dev/null; then
+              echo "'mitigations=off' already present on the kernel command line. Nothing to do."
+              return
+            fi
+            echo "Attempting to set 'mitigations=off' on the kernel command line."
+            if [[ "${EUID}" -ne 0 ]]; then
+              echo "This script must be run as root."
+              return 1
+            fi
+            check_not_secure_boot
+
+            dir="$(mktemp -d)"
+            mount /host/dev/disk/by-partlabel/EFI-SYSTEM "${dir}"
+            sed -i -e "s|cros_efi|cros_efi mitigations=off|g" "${dir}/efi/boot/grub.cfg"
+            umount "${dir}"
+            rmdir "${dir}"
+            echo "Rebooting."
+            chroot /host reboot
+          }
+
+          main
+      containers:
+      - image: gcr.io/google-containers/pause:2.0
+        name: pause
+      nodeSelector:
+        "cloud.google.com/gke-mitigations-disabled": "true"
+        "cloud.google.com/gke-os-distribution": "cos"
