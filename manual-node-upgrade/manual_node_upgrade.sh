@@ -22,8 +22,8 @@ REGION=$2
 
 # fetch current control plane version
 CLUSTER_VERSION=$(gcloud container clusters describe \
-  $CLUSTER_NAME  --format="value(currentMasterVersion)") \
-  --region=$REGION
+  $CLUSTER_NAME  --format="value(currentMasterVersion)" \
+  --region=$REGION)
 
 # list node pools with version not matching control plane
 for np in $(gcloud container node-pools list \
