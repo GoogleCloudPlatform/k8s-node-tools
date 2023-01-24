@@ -1,0 +1,1 @@
+The sample script `manual_node_upgrade.sh` filters all node pools not matching the control plane's k8s version for a specified cluster. For more information about GKE manual upgrades, consult the online documentation: https://cloud.google.com/kubernetes-engine/docs/how-to/upgrading-a-cluster
