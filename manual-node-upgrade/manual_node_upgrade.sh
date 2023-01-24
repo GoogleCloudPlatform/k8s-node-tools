@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright 2022 Google LLC
+# Copyright 2023 Google LLC
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,21 +14,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Example: `./manual_node_upgrade.sh <cluster> <region>`
+# Example: `./manual_node_upgrade.sh CLUSTER REGION`
 #
 
 CLUSTER_NAME=$1
 REGION=$2
 
+[ -z "$CLUSTER_NAME" ] || [ -z "$REGION" ] \
+  && echo "Usage: ./manual_node_upgrade.sh CLUSTER_NAME REGION" \
+  && exit 1;
+
 # fetch current control plane version
 CLUSTER_VERSION=$(gcloud container clusters describe \
-  $CLUSTER_NAME  --format="value(currentMasterVersion)" \
+  "$CLUSTER_NAME"  --format="value(currentMasterVersion)" \
   --region=$REGION)
 
 # list node pools with version not matching control plane
 for np in $(gcloud container node-pools list \
   --format="value(name)" --filter="version!=$CLUSTER_VERSION" \
-  --cluster $CLUSTER_NAME --region=$REGION); do
-  gcloud container clusters upgrade $CLUSTER_NAME --node-pool $np \
+  --cluster "$CLUSTER_NAME" --region=$REGION); do
+  gcloud container clusters upgrade "$CLUSTER_NAME" --node-pool $np \
     --region=$REGION --quiet;
 done
