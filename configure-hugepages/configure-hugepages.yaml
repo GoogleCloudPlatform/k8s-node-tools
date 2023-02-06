@@ -27,6 +27,10 @@
 # node pool with the "cloud.google.com/gke-configure-hugepages=true" label in your
 # cluster, deploy the DaemonSet to configure hugepages in that node pool,
 # and then migrate your workloads to the new node pool.
+# 
+# This DaemonSet will work on Standard clusters and cannot be run on Autopilot
+# cluster. There are currently no workaround for Autopilot cluster for enabling hugepages.
+#
 
 apiVersion: apps/v1
 kind: DaemonSet
