@@ -23,36 +23,20 @@ metadata:
   name: cos-auditd-logging
   namespace: cos-auditd
   annotations:
-    kubernetes.io/description: 'DaemonSet that enables Linux auditd logging on COS nodes.'
+    kubernetes.io/description: 'DaemonSet that enables Linux auditd logging on non-Autopilot COS nodes.'
 spec:
   selector:
     matchLabels:
       name: cos-auditd-logging
   template:
     metadata:
-      annotations:
-        scheduler.alpha.kubernetes.io/critical-pod: ""
       labels:
         name: cos-auditd-logging
     spec:
+      # Necessary for ensuring access to Google Cloud credentials from the node's metadata server.
       hostNetwork: true
       hostPID: true
-      nodeSelector:
-        cloud.google.com/gke-os-distribution: cos
-      volumes:
-      - hostPath:
-          path: /
-        name: host
-      - hostPath:
-          path: /var/log
-        name: varlog
-      - hostPath:
-          path: /usr/lib64
-        name: libsystemddir
-      - configMap:
-          defaultMode: 420
-          name: fluentd-gcp-config-cos-auditd
-        name: config-volume
+      dnsPolicy: Default
       initContainers:
       - name: cos-auditd-setup
         image: ubuntu
@@ -67,34 +51,38 @@ spec:
             memory: "10Mi"
             cpu: "10m"
       containers:
-      - name: fluentd-gcp-cos-auditd
+      - name: cos-auditd-fluent-bit
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+            add:
+            - DAC_OVERRIDE
         env:
         - name: NODE_NAME
           valueFrom:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: gcr.io/stackdriver-agents/stackdriver-logging-agent:1.9.4
+        # Substitute these (manually or via envsubst). For example, run
+        # `CLUSTER_NAME=example-cluster CLUSTER_LOCATION=us-central1-a envsubst '$CLUSTER_NAME,$CLUSTER_LOCATION' < ${THIS_FILE:?} | kubectl apply -f -`
+        - name: CLUSTER_NAME
+          value: "$CLUSTER_NAME"
+        - name: CLUSTER_LOCATION
+          value: "$CLUSTER_LOCATION"
+        image: gke.gcr.io/fluent-bit@sha256:436f3b7a38522314dd3db22ae8187192d928763c29e94d04c0900b34f0ca0779 # v1.8.12-gke.16
         imagePullPolicy: IfNotPresent
         livenessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - |
-              LIVENESS_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-300}; STUCK_THRESHOLD_SECONDS=${LIVENESS_THRESHOLD_SECONDS:-900}; if [[ ! -e /var/log/fluentd-buffers ]]; then
-                exit 1;
-              fi; touch -d "${STUCK_THRESHOLD_SECONDS} seconds ago" /tmp/marker-stuck; if [[ -z "$(find /var/log/fluentd-buffers -type f -newer /tmp/marker-stuck -print -quit)" ]]; then
-                rm -rf /var/log/fluentd-buffers;
-                exit 1;
-              fi; touch -d "${LIVENESS_THRESHOLD_SECONDS} seconds ago" /tmp/marker-liveness; if [[ -z "$(find /var/log/fluentd-buffers -type f -newer /tmp/marker-liveness -print -quit)" ]]; then
-                exit 1;
-              fi;
-          failureThreshold: 3
-          initialDelaySeconds: 600
+          httpGet:
+            path: /
+            port: 2024
+          initialDelaySeconds: 120
           periodSeconds: 60
-          successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
+        ports:
+        - name: metrics
+          containerPort: 2024
         resources:
           limits:
             cpu: "1"
@@ -107,65 +95,90 @@ spec:
         volumeMounts:
         - mountPath: /var/log
           name: varlog
-        - mountPath: /host/lib
-          name: libsystemddir
-          readOnly: true
-        - mountPath: /etc/google-fluentd/google-fluentd.conf
-          subPath: google-fluentd.conf
+        - mountPath: /var/lib/cos-auditd-fluent-bit/pos-files
+          name: varlib-cos-auditd-fluent-bit-pos-files
+        - mountPath: /fluent-bit/etc
           name: config-volume
-      dnsPolicy: Default
+      nodeSelector:
+        cloud.google.com/gke-os-distribution: cos
       restartPolicy: Always
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 120
       tolerations:
-      - effect: NoSchedule
-        key: node.alpha.kubernetes.io/ismaster
-      - effect: NoExecute
-        operator: Exists
-      - effect: NoSchedule
-        key: sandbox.gke.io/runtime
-        operator: Equal
-        value: gvisor
+      - operator: "Exists"
+        effect: "NoExecute"
+      - operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+      - name: host
+        hostPath:
+          path: /
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibcos-auditd-fluent-bit
+        hostPath:
+          path: /var/lib/cos-auditd-fluent-bit
+          type: DirectoryOrCreate
+      - name: varlib-cos-auditd-fluent-bit-pos-files
+        hostPath:
+          path: /var/lib/cos-auditd-fluent-bit/pos-files
+          type: DirectoryOrCreate
+      - name: config-volume
+        configMap:
+          name: cos-auditd-fluent-bit-config
   updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 1
     type: RollingUpdate
 ---
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: fluentd-gcp-config-cos-auditd
+  name: cos-auditd-fluent-bit-config
   namespace: cos-auditd
   annotations:
     kubernetes.io/description: 'ConfigMap for Linux auditd logging daemonset on COS nodes.'
 data:
-  google-fluentd.conf: |-
-    <source>
-      @type systemd
-      filters [{ "SYSLOG_IDENTIFIER": "audit" }]
-      pos_file /var/log/gcp-journald-audit.pos
-      read_from_head true
-      tag linux-auditd
-    </source>
+  fluent-bit.conf: |-
+    [SERVICE]
+        Flush         5
+        Grace         120
+        Log_Level     info
+        Daemon        off
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_PORT     2024
 
-    # Do not collect fluentd's own logs to avoid infinite loops.
-    <match fluent.**>
-      @type null
-    </match>
+    [INPUT]
+        # https://docs.fluentbit.io/manual/input/systemd
+        Name            systemd
+        Alias           audit
+        Tag             audit
+        Systemd_Filter  SYSLOG_IDENTIFIER=audit
+        Path            /var/log/journal
+        DB              /var/lib/cos-auditd-fluent-bit/pos-files/audit.db
+        Buffer_Max_Size 20MB
+        Mem_Buf_Limit   20MB
 
-    <match **>
-      @type google_cloud
+    [FILTER]
+        # https://docs.fluentbit.io/manual/pipeline/filters/modify
+        Name                modify
+        Match               audit
+        Add                 logging.googleapis.com/local_resource_id k8s_node.${NODE_NAME}
 
-      enable_monitoring false
-      split_logs_by_tag false
-      detect_subservice false
-      buffer_type file
-      buffer_path /var/log/fluentd-buffers/system.audit.buffer
-      buffer_queue_full_action block
-      buffer_chunk_limit 512k
-      buffer_queue_limit 2
-      flush_interval 5s
-      max_retry_wait 30
-      disable_retry_limit
-      num_threads 2
-      use_grpc true
-    </match>
+    [FILTER]
+        Name           modify
+        Match          audit
+        Add            logging.googleapis.com/logName linux-auditd
+
+    [OUTPUT]
+        # https://docs.fluentbit.io/manual/pipeline/outputs/stackdriver
+        Name                      stackdriver
+        Match                     audit
+        Severity_key              severity
+        log_name_key              logging.googleapis.com/logName
+        Resource                  k8s_node
+        # The plugin will read the project ID from the metadata server, but not the cluster name and location for some reason, so they have to be injected.
+        k8s_cluster_name          ${CLUSTER_NAME}
+        k8s_cluster_location      ${CLUSTER_LOCATION}
+        net.connect_timeout       60
+        Retry_Limit               14
+        Workers                   2
