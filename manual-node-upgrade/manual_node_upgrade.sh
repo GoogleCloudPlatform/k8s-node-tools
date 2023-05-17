@@ -30,6 +30,7 @@ CLUSTER_VERSION=$(gcloud container clusters describe \
   --region=$REGION)
 
 # list node pools with version not matching control plane
+# and then issue an upgrade command for each identified node pool
 for np in $(gcloud container node-pools list \
   --format="value(name)" --filter="version!=$CLUSTER_VERSION" \
   --cluster "$CLUSTER_NAME" --region=$REGION); do
