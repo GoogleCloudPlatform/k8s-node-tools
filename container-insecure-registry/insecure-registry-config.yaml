@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: insecure-registries
+  namespace: default
+  labels:
+    k8s-app: insecure-registries
+spec:
+  selector:
+    matchLabels:
+      name: insecure-registries
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: insecure-registries
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-container-runtime: "containerd"
+      hostPID: true
+      containers:
+        - name: startup-script
+          image: gcr.io/google-containers/startup-script:v1
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          env:
+          - name: STARTUP_SCRIPT
+            value: |
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+
+              export REGISTRY_ADDRESS=ADDRESS
+
+              echo "Allowlisting insecure registries"
+              grep -qxF '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$REGISTRY_ADDRESS'"]' /etc/containerd/config.toml || \
+                echo -e '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$REGISTRY_ADDRESS'"]\n  endpoint = ["http://'$REGISTRY_ADDRESS'"]' >> /etc/containerd/config.toml
+              echo "Reloading systemd management configuration"
+              systemctl daemon-reload
+              echo "Restarting containerd..."
+              systemctl restart containerd
