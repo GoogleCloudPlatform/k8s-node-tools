@@ -26,17 +26,22 @@ spec:
           securityContext:
             privileged: true
           env:
+          - name: ADDRESS
+            value: "REGISTRY_ADDRESS"
           - name: STARTUP_SCRIPT
             value: |
               set -o errexit
               set -o pipefail
               set -o nounset
 
-              export REGISTRY_ADDRESS=ADDRESS
+              if [[ -z "$ADDRESS" || "$ADDRESS" == "REGISTRY_ADDRESS" ]]; then
+                echo "Error: Environment variable ADDRESS is not set in containers.spec.env"
+                exit 1
+              fi
 
               echo "Allowlisting insecure registries"
-              grep -qxF '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$REGISTRY_ADDRESS'"]' /etc/containerd/config.toml || \
-                echo -e '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$REGISTRY_ADDRESS'"]\n  endpoint = ["http://'$REGISTRY_ADDRESS'"]' >> /etc/containerd/config.toml
+              grep -qxF '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]' /etc/containerd/config.toml || \
+                echo -e '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]\n  endpoint = ["http://'$ADDRESS'"]' >> /etc/containerd/config.toml
               echo "Reloading systemd management configuration"
               systemctl daemon-reload
               echo "Restarting containerd..."
