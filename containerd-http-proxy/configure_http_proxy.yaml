@@ -1,0 +1,107 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: containerd-http-proxy
+spec:
+  selector:
+    matchLabels:
+      name: containerd-http-proxy
+  template:
+    metadata:
+      labels:
+        name: containerd-http-proxy
+    spec:
+      hostPID: true
+      containers:
+      - name: startup-script
+        image: gke.gcr.io/debian-base:bookworm-v1.0.0-gke.1
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          set -u
+
+          validate_proxy() {
+            input_string=$1
+
+            if echo "$input_string" | grep -qvE '^(HTTP_PROXY|HTTPS_PROXY|NO_PROXY)='; then
+                echo "Error: Input does not start with a valid prefix (HTTP_PROXY, HTTPS_PROXY, NO_PROXY). Input: '$input_string'"
+                exit 1
+            fi
+
+            if echo "$input_string" | grep -q ' '; then
+                echo "Error: Input cannot contain spaces. Input: '$input_string'"
+                exit 1
+            fi
+
+            if echo "$input_string" | sed 1d | grep -q .; then
+                echo "Error: Input cannot contain newline. Input: '$input_string'"
+                exit 1
+            fi
+          }
+
+          validate_proxy "${HTTP_PROXY:-}"
+          validate_proxy "${HTTPS_PROXY:-}"
+          validate_proxy "${NO_PROXY:-NO_PROXY=localhost}"
+
+          STARTUP_SCRIPT=$(cat <<END
+          set -e
+          set -u
+          mkdir -p /etc/systemd/system/containerd.service.d
+          echo "[Service]
+          Environment=${HTTP_PROXY}
+          Environment=${HTTPS_PROXY}
+          Environment=${NO_PROXY:-NO_PROXY=localhost}" > /etc/systemd/system/containerd.service.d/http-proxy.conf
+          echo "Reloading systemd management configuration"
+          systemctl daemon-reload
+          echo "Restarting containerd..."
+          systemctl restart containerd
+          END
+          )
+
+          CONFIG_PATH="/etc/systemd/system/containerd.service.d/http-proxy.conf"
+          CHECK_INTERVAL_SECONDS="30"
+          EXEC="nsenter -t 1 -m -u -i -n -p --"
+
+          do_startup_script() {
+            err=0
+
+            $EXEC sh -c "${STARTUP_SCRIPT}" && err=0 || err=$?
+            if [ ${err} != 0 ]; then
+              echo "!!! configure http-proxy failed! exit code '${err}'" 1>&2
+              return 1
+            fi
+
+            echo "!!! configure http-proxy succeeded!" 1>&2
+            return 0
+          }
+
+          while true; do
+            $EXEC stat "${CONFIG_PATH}" > /dev/null 2>&1 && err=0 || err=$?
+            if [ "${err}" != 0 ]; then
+              do_startup_script
+            fi
+
+            sleep "${CHECK_INTERVAL_SECONDS}"
+          done
+        env:
+        - name: HTTP_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: HTTP_PROXY
+        - name: HTTPS_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: HTTPS_PROXY
+        - name: NO_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: NO_PROXY
+              optional: true
