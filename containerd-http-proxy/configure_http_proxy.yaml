@@ -12,12 +12,20 @@ spec:
         name: containerd-http-proxy
     spec:
       hostPID: true
-      containers:
+      volumes:
+      - name: systemd-containerd-service
+        hostPath:
+          path: /etc/systemd/system/containerd.service.d
+          type: DirectoryOrCreate
+      initContainers:
       - name: startup-script
         image: gke.gcr.io/debian-base:bookworm-v1.0.0-gke.1
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true
+        volumeMounts:
+        - name: systemd-containerd-service
+          mountPath: /etc/systemd/system/containerd.service.d
         command:
         - /bin/sh
         - -c
@@ -28,11 +36,6 @@ spec:
           validate_proxy() {
             input_string=$1
 
-            if echo "$input_string" | grep -qvE '^(HTTP_PROXY|HTTPS_PROXY|NO_PROXY)='; then
-                echo "Error: Input does not start with a valid prefix (HTTP_PROXY, HTTPS_PROXY, NO_PROXY). Input: '$input_string'"
-                exit 1
-            fi
-
             if echo "$input_string" | grep -q ' '; then
                 echo "Error: Input cannot contain spaces. Input: '$input_string'"
                 exit 1
@@ -42,52 +45,31 @@ spec:
                 echo "Error: Input cannot contain newline. Input: '$input_string'"
                 exit 1
             fi
+
+            if echo "$input_string" | grep -q -e '"' -e "'"; then
+              echo "Error: Input cannot contain quotes. Input: '$input_string'"
+              exit 1
+            fi
           }
 
           validate_proxy "${HTTP_PROXY:-}"
           validate_proxy "${HTTPS_PROXY:-}"
-          validate_proxy "${NO_PROXY:-NO_PROXY=localhost}"
+          validate_proxy "${NO_PROXY:-localhost}"
 
-          STARTUP_SCRIPT=$(cat <<END
-          set -e
-          set -u
-          mkdir -p /etc/systemd/system/containerd.service.d
-          echo "[Service]
-          Environment=${HTTP_PROXY}
-          Environment=${HTTPS_PROXY}
-          Environment=${NO_PROXY:-NO_PROXY=localhost}" > /etc/systemd/system/containerd.service.d/http-proxy.conf
+          cat > /etc/systemd/system/containerd.service.d/http-proxy.conf <<EOF
+          [Service]
+          Environment="HTTP_PROXY=${HTTP_PROXY}"
+          Environment="HTTPS_PROXY=${HTTPS_PROXY}"
+          Environment="NO_PROXY=${NO_PROXY:-localhost}"
+          EOF
+
+          EXEC="nsenter -t 1 -m -p --"
           echo "Reloading systemd management configuration"
-          systemctl daemon-reload
+          $EXEC systemctl daemon-reload
           echo "Restarting containerd..."
-          systemctl restart containerd
-          END
-          )
+          $EXEC systemctl restart containerd
 
-          CONFIG_PATH="/etc/systemd/system/containerd.service.d/http-proxy.conf"
-          CHECK_INTERVAL_SECONDS="30"
-          EXEC="nsenter -t 1 -m -u -i -n -p --"
-
-          do_startup_script() {
-            err=0
-
-            $EXEC sh -c "${STARTUP_SCRIPT}" && err=0 || err=$?
-            if [ ${err} != 0 ]; then
-              echo "!!! configure http-proxy failed! exit code '${err}'" 1>&2
-              return 1
-            fi
-
-            echo "!!! configure http-proxy succeeded!" 1>&2
-            return 0
-          }
-
-          while true; do
-            $EXEC stat "${CONFIG_PATH}" > /dev/null 2>&1 && err=0 || err=$?
-            if [ "${err}" != 0 ]; then
-              do_startup_script
-            fi
-
-            sleep "${CHECK_INTERVAL_SECONDS}"
-          done
+          echo "!!! configure http-proxy succeeded!" 1>&2
         env:
         - name: HTTP_PROXY
           valueFrom:
@@ -105,3 +87,8 @@ spec:
               name: containerd-proxy-configmap
               key: NO_PROXY
               optional: true
+      containers:
+      - name: pause-container
+        image: gke.gcr.io/pause:3.7
+        imagePullPolicy: IfNotPresent
+

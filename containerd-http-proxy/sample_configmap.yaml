@@ -3,6 +3,6 @@ kind: ConfigMap
 metadata:
   name: containerd-proxy-configmap
 data:
-  HTTP_PROXY: HTTP_PROXY=http://proxy.example.com:80
-  HTTPS_PROXY: HTTPS_PROXY=http://proxy.example.com:443
-  NO_PROXY: NO_PROXY=localhost
+  HTTP_PROXY: http://proxy.example.com:80
+  HTTPS_PROXY: https://proxy.example.com:443
+  NO_PROXY: localhost,metadata.google.internal
