@@ -1,0 +1,94 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: containerd-http-proxy
+spec:
+  selector:
+    matchLabels:
+      name: containerd-http-proxy
+  template:
+    metadata:
+      labels:
+        name: containerd-http-proxy
+    spec:
+      hostPID: true
+      volumes:
+      - name: systemd-containerd-service
+        hostPath:
+          path: /etc/systemd/system/containerd.service.d
+          type: DirectoryOrCreate
+      initContainers:
+      - name: startup-script
+        image: gke.gcr.io/debian-base:bookworm-v1.0.0-gke.1
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: systemd-containerd-service
+          mountPath: /etc/systemd/system/containerd.service.d
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          set -u
+
+          validate_proxy() {
+            input_string=$1
+
+            if echo "$input_string" | grep -q ' '; then
+                echo "Error: Input cannot contain spaces. Input: '$input_string'"
+                exit 1
+            fi
+
+            if echo "$input_string" | sed 1d | grep -q .; then
+                echo "Error: Input cannot contain newline. Input: '$input_string'"
+                exit 1
+            fi
+
+            if echo "$input_string" | grep -q -e '"' -e "'"; then
+              echo "Error: Input cannot contain quotes. Input: '$input_string'"
+              exit 1
+            fi
+          }
+
+          validate_proxy "${HTTP_PROXY:-}"
+          validate_proxy "${HTTPS_PROXY:-}"
+          validate_proxy "${NO_PROXY:-localhost}"
+
+          cat > /etc/systemd/system/containerd.service.d/http-proxy.conf <<EOF
+          [Service]
+          Environment="HTTP_PROXY=${HTTP_PROXY}"
+          Environment="HTTPS_PROXY=${HTTPS_PROXY}"
+          Environment="NO_PROXY=${NO_PROXY:-localhost}"
+          EOF
+
+          EXEC="nsenter -t 1 -m -p --"
+          echo "Reloading systemd management configuration"
+          $EXEC systemctl daemon-reload
+          echo "Restarting containerd..."
+          $EXEC systemctl restart containerd
+
+          echo "!!! configure http-proxy succeeded!" 1>&2
+        env:
+        - name: HTTP_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: HTTP_PROXY
+        - name: HTTPS_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: HTTPS_PROXY
+        - name: NO_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: containerd-proxy-configmap
+              key: NO_PROXY
+              optional: true
+      containers:
+      - name: pause-container
+        image: gke.gcr.io/pause:3.7
+        imagePullPolicy: IfNotPresent
+
