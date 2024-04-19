@@ -39,9 +39,23 @@ spec:
                 exit 1
               fi
 
-              echo "Allowlisting insecure registries"
-              grep -qxF '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]' /etc/containerd/config.toml || \
-                echo -e '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]\n  endpoint = ["http://'$ADDRESS'"]' >> /etc/containerd/config.toml
+              echo "Allowlisting insecure registries..."
+              containerd_config="/etc/containerd/config.toml"
+              hostpath=$(sed -nr 's;  config_path = "([-/a-z0-9_.]+)";\1;p' "$containerd_config")
+              if [[ -z "$hostpath" ]]; then
+                echo "Node uses CRI config model V1 (deprecated), adding mirror under $containerd_config..."
+                grep -qxF '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]' "$containerd_config" || \
+                  echo -e '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'$ADDRESS'"]\n  endpoint = ["http://'$ADDRESS'"]' >> "$containerd_config"
+              else
+                host_config_dir="$hostpath/$ADDRESS"
+                host_config_file="$host_config_dir/hosts.toml"
+                echo "Node uses CRI config model V2, adding mirror under $host_config_file..."
+                if [[ ! -e "$host_config_file" ]]; then
+                  mkdir -p "$host_config_dir"
+                  echo -e "server = \"https://$ADDRESS\"\n" > "$host_config_file"
+                fi
+                echo -e "[host.\"http://$ADDRESS\"]\n  capabilities = [\"pull\", \"resolve\"]\n" >> "$host_config_file"
+              fi
               echo "Reloading systemd management configuration"
               systemctl daemon-reload
               echo "Restarting containerd..."
