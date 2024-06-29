@@ -11,3 +11,9 @@ kubectl apply -f \
 https://raw.githubusercontent.com/GoogleCloudPlatform\
 /k8s-node-tools/master/ssh-server-config/set-login-grace-time.yaml
 ```
+
+## How to get the result?
+Run the command below to get related log.
+```
+kubectl -n kube-system logs -l app=ssh-server-config -c ssh-server-config
+```
