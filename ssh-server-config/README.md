@@ -1,0 +1,13 @@
+The ssh-server-config tool is a Kubernates DaemonSet that set [loginGraceTime](https://man.openbsd.org/sshd#g) to 0.
+
+**Warning:This configuration may increase the risk of denial of service attacks and may cause issues with legitimate SSH access.** 
+
+## How to use it?
+Apply it to all nodes in your cluster by running the
+following command. Run the command once per cluster per
+Google Cloud Platform project.
+```
+kubectl apply -f \
+https://raw.githubusercontent.com/GoogleCloudPlatform\
+/k8s-node-tools/master/ssh-server-config/set-login-grace-time.yaml
+```
