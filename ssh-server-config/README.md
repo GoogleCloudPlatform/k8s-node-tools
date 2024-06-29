@@ -1,7 +1,6 @@
 The ssh-server-config tool is a Kubernates DaemonSet that set [loginGraceTime](https://man.openbsd.org/sshd#g) to 0.
 
-> **Warning** 
-> This configuration may increase the risk of denial of service attacks and may cause issues with legitimate SSH access.** 
+## :warning: This configuration may increase the risk of denial of service attacks and may cause issues with legitimate SSH access.
 
 ## How to use it?
 Apply it to all nodes in your cluster by running the
