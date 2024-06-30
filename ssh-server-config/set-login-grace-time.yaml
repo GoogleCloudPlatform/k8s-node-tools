@@ -1,0 +1,64 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: ssh-server-config
+  namespace: kube-system
+  labels:
+    app: ssh-server-config
+spec:
+  selector:
+    matchLabels:
+      app: ssh-server-config
+  template:
+    metadata:
+      labels:
+        app: ssh-server-config
+    spec:
+      hostPID: true
+      initContainers:
+        - name: ssh-server-config
+          image: gke.gcr.io/debian-base:bookworm-v1.0.3-gke.0@sha256:91b29592ee0b782c0ab777bfcabd14a0ae83d8e8eb90d3f0eb500acafae3f4e5
+          securityContext:
+            privileged: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              set -u
+              if [ ! -e "/etc/ssh/sshd_config" ] ; then
+                echo "/etc/ssh/sshd_config not found"
+                exit 1
+              fi
+
+              cp /etc/ssh/sshd_config /etc/ssh/sshd_config.cp
+              if grep -q "^LoginGraceTime" "/etc/ssh/sshd_config.cp"; then
+                  # Update existing LoginGraceTime
+                  sed -i "s/^LoginGraceTime.*/LoginGraceTime 0/" "/etc/ssh/sshd_config.cp"
+              else
+                  # Add new LoginGraceTime
+                  echo "LoginGraceTime 0" >> "/etc/ssh/sshd_config.cp"
+              fi
+
+              cp /etc/ssh/sshd_config.cp /etc/ssh/sshd_config
+              rm /etc/ssh/sshd_config.cp
+
+
+              EXEC="nsenter -t 1 -m -p --"
+              $EXEC systemctl reload sshd
+              echo "sshd logingracetime after restart:"
+              $EXEC sshd -T | grep logingracetime
+          volumeMounts:
+            - name: sshd-config
+              mountPath: /etc/ssh/sshd_config
+      containers:
+        - name: pause-container
+          image: gke.gcr.io/pause:3.7@sha256:5b658f3c4f034a9619ad7e6d1ee49ee532a1e0a598dc68b06d17b6036116b924
+      volumes:
+        - name: sshd-config
+          hostPath:
+            path: /etc/ssh/sshd_config
+            type: File
+
+
+
