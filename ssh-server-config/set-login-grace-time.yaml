@@ -45,7 +45,7 @@ spec:
 
 
               EXEC="nsenter -t 1 -m -p --"
-              $EXEC systemctl restart sshd
+              $EXEC systemctl reload sshd
               echo "sshd logingracetime after restart:"
               $EXEC sshd -T | grep logingracetime
           volumeMounts:
