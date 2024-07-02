@@ -6,10 +6,21 @@ The ssh-server-config tool is a Kubernates DaemonSet that set [loginGraceTime](h
 Apply it to all nodes in your cluster by running the
 following command. Run the command once per cluster per
 Google Cloud Platform project.
+
+### GKE Clusters
+
 ```
 kubectl apply -f \
 https://raw.githubusercontent.com/GoogleCloudPlatform\
 /k8s-node-tools/master/ssh-server-config/set-login-grace-time.yaml
+```
+
+### GDCV Clusters
+
+```
+kubectl apply -f \
+https://raw.githubusercontent.com/GoogleCloudPlatform\
+/k8s-node-tools/master/ssh-server-config/set-login-grace-time-gdcv.yaml
 ```
 
 ## How to get the result?
