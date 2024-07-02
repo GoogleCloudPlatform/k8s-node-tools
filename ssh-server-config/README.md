@@ -15,12 +15,12 @@ https://raw.githubusercontent.com/GoogleCloudPlatform\
 /k8s-node-tools/master/ssh-server-config/set-login-grace-time.yaml
 ```
 
-### GDCV Clusters
+### GDC software-only for VMware Clusters
 
 ```
 kubectl apply -f \
 https://raw.githubusercontent.com/GoogleCloudPlatform\
-/k8s-node-tools/master/ssh-server-config/set-login-grace-time-gdcv.yaml
+/k8s-node-tools/master/ssh-server-config/set-login-grace-time-gdcso-vmware.yaml
 ```
 
 ## How to get the result?
