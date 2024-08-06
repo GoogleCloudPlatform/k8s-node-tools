@@ -75,6 +75,8 @@ spec:
                   echo "installing kdump"
                   apt-get update
                   DEBIAN_FRONTEND=noninteractive apt-get install -y linux-crashdump
+                  sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*/GRUB_CMDLINE_LINUX_DEFAULT="\$GRUB_CMDLINE_LINUX_DEFAULT crashkernel=2G-4G:320M,4G-32G:512M,32G-64G:1024M,64G-128G:2048M,128G-:4096M"/g' /etc/default/grub.d/kdump-tools.cfg
+                  update-grub
                   echo "kdump enabled; waiting for reboot in 10 secs..."
                   ( sleep 10 && reboot ) &
 
