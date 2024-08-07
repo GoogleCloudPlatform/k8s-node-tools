@@ -181,4 +181,4 @@ data:
         k8s_cluster_location      ${CLUSTER_LOCATION}
         net.connect_timeout       60
         Retry_Limit               14
-        Workers                   2
+        Workers                   1
