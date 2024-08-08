@@ -71,7 +71,7 @@ spec:
           value: "$CLUSTER_NAME"
         - name: CLUSTER_LOCATION
           value: "$CLUSTER_LOCATION"
-        image: gke.gcr.io/fluent-bit@sha256:436f3b7a38522314dd3db22ae8187192d928763c29e94d04c0900b34f0ca0779 # v1.8.12-gke.16
+        image: gke.gcr.io/fluent-bit@sha256:b148f7f960f101b6d52efd909fe43fef73cb40cee3571da61034974965605b66 # v1.8.12-gke.31
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
