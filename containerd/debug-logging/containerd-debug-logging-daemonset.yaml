@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: containerd-debug-logging
+  namespace: default
+  labels:
+    k8s-app: containerd-debug-logging
+spec:
+  selector:
+    matchLabels:
+      name: containerd-debug-logging
+  template:
+    metadata:
+      labels:
+        name: containerd-debug-logging
+    spec:
+      nodeSelector:
+        containerd-debug-logging: "true"
+      hostPID: true
+      containers:
+        - name: startup-script
+          image: gke.gcr.io/startup-script:v2
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          env:
+          - name: STARTUP_SCRIPT
+            value: |
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+
+              echo "creating containerd.service.d directory"
+              mkdir -p /etc/systemd/system/containerd.service.d
+              echo "creating 10-level_debug.conf file"
+              echo -e "[Service]\nExecStart=\nExecStart=/usr/bin/containerd --log-level debug" > /etc/systemd/system/containerd.service.d/10-level_debug.conf
+              echo "Reloading systemd management configuration"
+              systemctl daemon-reload
+              echo "Restarting containerd..."
+              systemctl restart containerd
