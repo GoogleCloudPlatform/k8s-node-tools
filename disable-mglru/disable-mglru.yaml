@@ -1,0 +1,52 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This DaemonSet disables the kernel option Multi-Gen LRU.
+# 
+# - First, update your GKE node pools with the annotation `disable-mglru: true`
+#   or your preferred annotation, if you update the annotation also update
+#   the nodeSelection section below
+# - Next, deploy the DaemonSet to your cluster.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: disable-mglru
+  namespace: default
+  labels:
+    k8s-app: disable-mglru
+spec:
+  selector:
+    matchLabels:
+      name: disable-mglru
+  template:
+    metadata:
+      labels:
+        name: disable-mglru
+    spec:
+      nodeSelector:
+        disable-mglru: "true"
+      hostPID: true
+      containers:
+        - name: startup-script
+          image: gke.gcr.io/startup-script:v2
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          env:
+          - name: STARTUP_SCRIPT
+            value: |
+              set -o errexit
+              set -o pipefail
+              set -o nounset
+              echo n > /sys/kernel/mm/lru_gen/enabled
