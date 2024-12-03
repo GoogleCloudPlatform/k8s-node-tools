@@ -71,6 +71,7 @@ spec:
           value: "$CLUSTER_NAME"
         - name: CLUSTER_LOCATION
           value: "$CLUSTER_LOCATION"
+        # This image is used for demo purposes. The best practice is to use the image from controlled registry and reference it by SHA.
         image: fluent/fluent-bit:latest
         imagePullPolicy: IfNotPresent
         livenessProbe:
