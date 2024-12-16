@@ -71,7 +71,8 @@ spec:
           value: "$CLUSTER_NAME"
         - name: CLUSTER_LOCATION
           value: "$CLUSTER_LOCATION"
-        image: gke.gcr.io/fluent-bit@sha256:b148f7f960f101b6d52efd909fe43fef73cb40cee3571da61034974965605b66 # v1.8.12-gke.31
+        # This image is used for demo purposes. The best practice is to use the image from controlled registry and reference it by SHA.
+        image: fluent/fluent-bit:latest
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -155,8 +156,6 @@ data:
         Systemd_Filter  SYSLOG_IDENTIFIER=audit
         Path            /var/log/journal
         DB              /var/lib/cos-auditd-fluent-bit/pos-files/audit.db
-        Buffer_Max_Size 20MB
-        Mem_Buf_Limit   20MB
 
     [FILTER]
         # https://docs.fluentbit.io/manual/pipeline/filters/modify
