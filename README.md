@@ -32,6 +32,7 @@ Tainting nodes is a foundational step when you want to dedicate specific nodes f
 ### How to Taint Nodes in GKE
 
 In Google Kubernetes Engine (GKE), you can taint nodes in node pools using `kubectl` or the `gcloud` command-line tool.
+Note: kubectl taints are not persistent, gcloud is recommended.
 
 **Using `kubectl`:**
 
