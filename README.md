@@ -1,7 +1,7 @@
 
-## Foundation:
 
-# Custom Node Configuration in GKE using Init Containers
+
+# Node Configuration in GKE
 
 The below outlines a strategy for performing custom node configuration in Google Kubernetes Engine (GKE) using init containers. The goal is to apply node-level settings (like sysctl adjustments, software installations, or kernel parameter checks) *before* regular application workloads are scheduled onto those nodes. To achieve this isolation temporarily, we'll mark nodes as unschedulable.
 
@@ -93,6 +93,7 @@ spec:
         image: us.gcr.io/gke-release/pause:latest
   updateStrategy:
     type: RollingUpdate
+```
 
 #### Walkthrough:
 
