@@ -64,7 +64,6 @@ spec:
         hostPath:
           path: /
           type: Directory # Mount the node's root filesystem
-          
       initContainers:
       - name: apply-sysctl-value
         image: us.gcr.io/gke-release/debian-base # Small image with shell tools
@@ -226,7 +225,7 @@ This scenario demonstrates using taints to temporarily isolate a node (or nodes 
         # Use the --remove-node-taints flag with the exact key/effect pair
         gcloud container node-pools update $NODE_POOL \
           --cluster=$GKE_CLUSTER \
-          --remove-node-taints=node.config.status/stage=configuring:NoSchedule \
+          --node-taints="" \
           --zone=$GKE_ZONE # Or --region=$GKE_REGION
         ```
     * Verify the taint is removed:
