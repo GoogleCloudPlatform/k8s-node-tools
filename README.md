@@ -66,7 +66,7 @@ spec:
           type: Directory # Mount the node's root filesystem
       initContainers:
       - name: apply-sysctl-value
-        image: us.gcr.io/gke-release/debian-base # Small image with shell tools
+        image: gcr.io/gke-release/debian-base # Small image with shell tools
         # *** Requires privilege to modify host kernel settings ***
         securityContext:
           privileged: true
@@ -184,7 +184,7 @@ This scenario demonstrates using taints to temporarily isolate a node (or nodes 
               hostPID: true    
               initContainers:
               - name: apply-config-on-tainted
-                image: us.gcr.io/gke-release/debian-base # Small image with shell tools
+                image: gcr.io/gke-release/debian-base # Small image with shell tools
                 securityContext:
                   privileged: true # Still needs privilege for host changes
                 volumeMounts:
