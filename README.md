@@ -3,7 +3,7 @@
 
 # Node Configuration in GKE
 
-The below outlines a strategy for performing custom node configuration in Google Kubernetes Engine (GKE) using init containers. The goal is to apply node-level settings (like sysctl adjustments, software installations, or kernel parameter checks) *before* regular application workloads are scheduled onto those nodes. To achieve this isolation temporarily, we'll mark nodes as unschedulable.
+The below outlines a strategy for performing custom node configuration in Google Kubernetes Engine (GKE) using init containers. The goal is to apply node-level settings (like sysctl adjustments, software installations, or kernel parameter checks) *before* regular application workloads are scheduled onto those nodes. To achieve this isolation temporarily, we'll mark nodes as unshcedulable with taint until configuration is completed.
 
 ## Supporting Tools for Node Configuration
 
@@ -125,7 +125,7 @@ This scenario demonstrates using taints to temporarily isolate a node (or nodes 
 
 1.  **Taint:** Apply a **`taint`** to a node pool. This prevents regular pods (without matching **`tolerations`**) from being scheduled there, effectively reserving it.
 2.  **Configure:** Deploy a DaemonSet (like the one in Part 1) but add a **`tolerations`** block that specifically matches the taint applied. This ensures the configuration init container *only* runs on the isolated, tainted nodes.
-3.  **Untaint:** Remove the taint from the node pool, allowing any workload (subject to other scheduling rules) to be scheduled on the now-configured nodes.
+3.  **Untaint:** Remove the taint from the indvidual nodes, allowing any workload (subject to other scheduling rules) to be scheduled on the now-configured nodes. The why: The source of truth of taints is at node pool level, meaning when the node pool scales up, or after upgrade, the new nodes always get the taint. This is the desired behavior, to prevent pod scheduling until config is done (and taint is removed).
 
 #### Walkthrough:
 
