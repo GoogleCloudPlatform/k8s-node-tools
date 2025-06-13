@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cri-v1alpha2-api-deprecation-reporter
+  namespace: default
+  labels:
+    k8s-app: cri-v1alpha2-api-deprecation-reporter
+spec:
+  selector:
+    matchLabels:
+      name: cri-v1alpha2-api-deprecation-reporter
+  template:
+    metadata:
+      labels:
+        name: cri-v1alpha2-api-deprecation-reporter
+    spec:
+      hostPID: true
+      containers:
+      - name: tracer
+        image: mirror.gcr.io/ubuntu
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y jq
+
+          echo "time=\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\" msg=\"checking for CRI v1alpha2 API deprecation warnings\" node=\"$NODE_NAME\""
+
+          while true; do
+            DEPRECATION_DATA=$(nsenter -at 1 -- /usr/bin/ctr deprecations list --format json)
+            V1ALPHA2_WARNING=$(echo "$DEPRECATION_DATA" | jq '.[] | select(.id == "io.containerd.deprecation/cri-api-v1alpha2")')
+            if [ -n "$V1ALPHA2_WARNING" ]; then
+              LAST_OCCURRENCE=$(echo $V1ALPHA2_WARNING | jq -r .lastOccurrence)
+              echo "time=\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\" msg=\"found CRI v1alpha2 API deprecation warning\" node=\"$NODE_NAME\" lastOccurrence=\"$LAST_OCCURRENCE\""
+            else
+              echo "time=\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\" msg=\"CRI v1alpha2 API deprecation warning not found on this node\" node=\"$NODE_NAME\""
+            fi
+
+            # NOTE: You can update this interval as needed.
+            sleep 60
+          done
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"

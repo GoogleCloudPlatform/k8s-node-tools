@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: containerd-socket-tracer
+  namespace: default
+  labels:
+    k8s-app: containerd-socket-tracer
+spec:
+  selector:
+    matchLabels:
+      name: containerd-socket-tracer
+  template:
+    metadata:
+      labels:
+        name: containerd-socket-tracer
+    spec:
+      hostPID: true
+      containers:
+      - name: tracer
+        image: mirror.gcr.io/ubuntu
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y bpftrace && \
+
+          start_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
+          echo "time=\"$start_time\" msg=\"eBPF tracepoint for containerd socket connections started\" node=\"$NODE_NAME\"" && \
+
+          bpftrace -e '
+          #include <sys/socket.h>
+
+          // Log all PIDs and commands connecting to the containerd socket.
+          tracepoint:syscalls:sys_enter_connect
+          // Skip commands we know are not using the deprecated API.
+          // Skip "crictl" (used below) to prevent creating a loop.
+          // NOTE: You can update this filter with more commands as needed.
+          /comm != "kubelet" && comm != "containerd" && comm != "ctr" && comm != "crictl"/ {
+            $sa = (struct sockaddr_un *)args->uservaddr;
+            if ($sa->sun_family == AF_UNIX &&
+                strcontains($sa->sun_path, "containerd.sock") &&
+                !strcontains($sa->sun_path, "containerd.sock.ttrpc")) {
+              printf("%d %s\n", pid, comm);
+            }
+          }' | {
+            # Skip parsing bpftrace header text.
+            read -r _
+
+            # Query CRI for the container with that PID.
+            while read -r pid comm; do
+              nsenter -at 1 /home/kubernetes/bin/crictl inspect --output go-template --template '
+              {{- range . -}}
+                {{- if eq .info.pid "'"$pid"'" -}}
+                  {{- $time := "'"$(date -u +'%Y-%m-%dT%H:%M:%SZ')"'" -}}
+                  {{- $node := "'"$NODE_NAME"'" -}}
+                  {{- $namespace := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-namespace" -}}
+                  {{- $name := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-name" -}}
+                  {{- $container := index .info.runtimeSpec.annotations "io.kubernetes.cri.container-name" -}}
+                  {{- printf "time=\"%s\" msg=\"containerd socket connection opened\" node=\"%s\" pod=\"%s/%s\" container=\"%s\" comm=\"%s\"" $time $node $namespace $name $container "'"$comm"'" -}}
+                {{- end -}}
+              {{- end -}}'
+            done
+          }
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: debugfs
+          mountPath: /sys/kernel/debug
+          readOnly: true
+        - name: modules
+          mountPath: /lib/modules
+          readOnly: true
+      volumes:
+      - name: debugfs
+        hostPath:
+          path: /sys/kernel/debug
+      - name: modules
+        hostPath:
+          path: /lib/modules
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
