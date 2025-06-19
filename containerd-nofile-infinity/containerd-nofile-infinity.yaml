@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nofile-infinity
+  namespace: default
+  labels:
+    k8s-app: nofile-infinity
+spec:
+  selector:
+    matchLabels:
+      name: nofile-infinity
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: nofile-infinity
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-container-runtime: "containerd"
+        kubernetes.io/os: "linux"
+      hostPID: true
+      tolerations:
+      - operator: "Exists"
+        effect: "NoExecute"
+      - operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+      - name: host
+        hostPath:
+          path: /
+          type: DirectoryOrCreate
+      initContainers:
+        - name: startup-script
+          image: gke.gcr.io/debian-base:bookworm-v1.0.0-gke.1
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: host
+            mountPath: /host
+          command:
+          - /bin/sh
+          - -c
+          - |
+            set -e
+            set -u
+            echo "Generating containerd system drop in config for nofile limit"
+            nofile_limit_path="/host/etc/systemd/system/containerd.service.d/40-LimitNOFILE-infinity.conf"
+            cat >> "${nofile_limit_path}" <<EOF
+            [Service]
+            LimitNOFILE=infinity
+            EOF
+            echo "Reloading systemd management configuration"
+            chroot /host systemctl daemon-reload
+            echo "Restarting containerd..."
+            chroot /host systemctl restart containerd
+      containers:
+        - name: pause
+          image: gke.gcr.io/pause:3.8
