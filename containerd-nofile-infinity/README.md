@@ -2,6 +2,12 @@
 
 This guide outlines the steps to configure the `LimitNOFILE` setting for the containerd service on GKE nodes. This is typically used to increase the maximum number of open file descriptors allowed for containerd, which can be beneficial for high-concurrency workloads or specific applications that require a large number of open files. Since containerd 2.0 the `LimitNOFILE` has been removed - see containerd/containerd#8924 for more details.
 
+## Prerequiste for GKE Autopilot Clusters:
+Deploy the `AllowListSynchronizer` resource in `containerd-nofile-infinity-allowlist.yaml`. This resource updates [Autopilot's security policies](https://cloud.google.com/kubernetes-engine/docs/how-to/run-autopilot-partner-workloads#about-allowlistsynchronizer) to run the privileged daemonset.
+    
+```bash
+kubectl apply -f containerd-nofile-infinity-allowlist.yaml
+```  
 
 ## Instructions
 
