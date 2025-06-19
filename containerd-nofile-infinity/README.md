@@ -5,10 +5,10 @@ This guide outlines the steps to configure the `LimitNOFILE` setting for the con
 
 ## Instructions
 
-1.  Deploy the daemonset in `nofile-infinity-daemonset.yaml`. This DaemonSet runs a privileged container that modifies the `containerd.service` systemd unit on each node to set `LimitNOFILE=infinity` and then restarts the Containerd service.
+1.  Deploy the daemonset in `containerd-nofile-infinity.yaml`. This DaemonSet runs a privileged container that modifies the `containerd.service` systemd unit on each node to set `LimitNOFILE=infinity` and then restarts the Containerd service.
 
     ```bash
-    kubectl apply -f nofile-infinity-daemonset.yaml
+    kubectl apply -f containerd-nofile-infinity.yaml
     ```
 
 ## Note
