@@ -1,0 +1,7 @@
+apiVersion: auto.gke.io/v1
+kind: AllowlistSynchronizer
+metadata:
+  name: gke-org-nofile-infinity-synchronizer
+spec:
+  allowlistPaths:
+  - "Gke-Org/nofile-infinity/gke-org-nofile-infinity-allowlist.yaml"
