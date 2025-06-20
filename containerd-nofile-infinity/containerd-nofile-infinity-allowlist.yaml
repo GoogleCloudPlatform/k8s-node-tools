@@ -4,4 +4,4 @@ metadata:
   name: gke-org-nofile-infinity-synchronizer
 spec:
   allowlistPaths:
-  - "Gke-Org/nofile-infinity/gke-org-nofile-infinity-allowlist.yaml"
+  - "Gke-Org/nofile-infinity-v2/gke-org-nofile-infinity-v2-allowlist.yaml"
