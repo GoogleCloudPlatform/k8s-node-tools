@@ -45,9 +45,13 @@ spec:
           - |
             set -e
             set -u
-            echo "Generating containerd system drop in config for nofile limit"
-            nofile_limit_path="/host/etc/systemd/system/containerd.service.d/40-LimitNOFILE-infinity.conf"
-            cat >> "${nofile_limit_path}" <<EOF
+            echo "Checking if containerd system drop-in directory exists"
+            if [ ! -d "/host/etc/systemd/system/containerd.service.d" ]; then
+              echo "containerd drop-in directory does not exist. Skipping"
+              exit 0
+            fi
+            echo "Generating containerd system drop-in config for nofile limit"
+            cat > "/host/etc/systemd/system/containerd.service.d/40-LimitNOFILE-infinity.conf" <<EOF
             [Service]
             LimitNOFILE=infinity
             EOF
