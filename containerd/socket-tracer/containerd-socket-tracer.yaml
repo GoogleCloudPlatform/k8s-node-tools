@@ -47,17 +47,35 @@ spec:
 
             # Query CRI for the container with that PID.
             while read -r pid comm; do
-              nsenter -at 1 /home/kubernetes/bin/crictl inspect --output go-template --template '
-              {{- range . -}}
-                {{- if eq .info.pid "'"$pid"'" -}}
-                  {{- $time := "'"$(date -u +'%Y-%m-%dT%H:%M:%SZ')"'" -}}
-                  {{- $node := "'"$NODE_NAME"'" -}}
-                  {{- $namespace := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-namespace" -}}
-                  {{- $name := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-name" -}}
-                  {{- $container := index .info.runtimeSpec.annotations "io.kubernetes.cri.container-name" -}}
-                  {{- printf "time=\"%s\" msg=\"containerd socket connection opened\" node=\"%s\" pod=\"%s/%s\" container=\"%s\" comm=\"%s\"" $time $node $namespace $name $container "'"$comm"'" -}}
-                {{- end -}}
-              {{- end -}}'
+              current_pid="$pid"
+              while true; do
+                output=$(nsenter -at 1 /home/kubernetes/bin/crictl inspect --output go-template --template '
+                  {{- range . -}}
+                    {{- if eq .info.pid "'"$current_pid"'" -}}
+                      {{- $time := "'"$(date -u +'%Y-%m-%dT%H:%M:%SZ')"'" -}}
+                      {{- $node := "'"$NODE_NAME"'" -}}
+                      {{- $namespace := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-namespace" -}}
+                      {{- $name := index .info.runtimeSpec.annotations "io.kubernetes.cri.sandbox-name" -}}
+                      {{- $container := index .info.runtimeSpec.annotations "io.kubernetes.cri.container-name" -}}
+                      {{- printf "time=\"%s\" msg=\"containerd socket connection opened\" node=\"%s\" pod=\"%s/%s\" container=\"%s\" comm=\"%s\"" $time $node $namespace $name $container "'"$comm"'" -}}
+                    {{- end -}}
+                  {{- end -}}'
+                )
+
+                if [ -n "$output" ]; then
+                  echo "$output"
+                  break
+                fi
+
+                # If it cannot be found, then walk up the ancestor tree to find the main container process.
+                if ! ppid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' '); then
+                  break
+                fi
+                if [ -z "$ppid" ] || [ "$ppid" -eq 1 ]; then
+                  break
+                fi
+                current_pid="$ppid"
+              done
             done
           }
         env:
