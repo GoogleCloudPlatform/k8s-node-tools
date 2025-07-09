@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         name: cri-v1alpha2-api-deprecation-reporter
+      annotations:
+        autopilot.gke.io/no-connect: "true"
     spec:
       hostPID: true
       containers:

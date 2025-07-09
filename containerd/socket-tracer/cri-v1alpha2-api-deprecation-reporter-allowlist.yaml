@@ -1,0 +1,7 @@
+apiVersion: auto.gke.io/v1
+kind: AllowlistSynchronizer
+metadata:
+  name: gke-org-cri-v1alpha2-api-deprecation-reporter-allowlist
+spec:
+  allowlistPaths:
+  - "Gke-Org/containerd-socket-tracer/gke-org-cri-v1alpha2-api-deprecation-reporter-allowlist.yaml"

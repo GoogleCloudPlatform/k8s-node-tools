@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         name: containerd-socket-tracer
+      annotations:
+        autopilot.gke.io/no-connect: "true"
     spec:
       hostPID: true
       containers:
@@ -78,6 +80,11 @@ spec:
               done
             done
           }
+        resources:
+          requests:
+            ephemeral-storage: "500Mi"
+          limits:
+            ephemeral-storage: "500Mi"
         env:
         - name: NODE_NAME
           valueFrom:
