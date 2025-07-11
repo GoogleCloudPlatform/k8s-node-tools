@@ -13,10 +13,12 @@ spec:
     metadata:
       labels:
         name: cri-v1alpha2-api-deprecation-reporter
+      annotations:
+        autopilot.gke.io/no-connect: "true"
     spec:
       hostPID: true
       containers:
-      - name: tracer
+      - name: reporter
         image: mirror.gcr.io/ubuntu
         command: ["/bin/sh", "-c"]
         args:
@@ -36,14 +38,18 @@ spec:
             fi
 
             # NOTE: You can update this interval as needed.
-            sleep 60
+            sleep $INTERVAL
           done
         env:
         - name: NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: INTERVAL
+          value: "60"
         securityContext:
+          # Privileged is required to use 'nsenter' to enter the host's PID
+          # namespace to run 'ctr' on the node.
           privileged: true
       tolerations:
       - key: "node.kubernetes.io/not-ready"

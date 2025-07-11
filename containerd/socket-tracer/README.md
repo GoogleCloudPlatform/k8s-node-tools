@@ -153,3 +153,25 @@ And to deploy the optional API reporter:
 ```sh
 $ kubectl apply -f cri-v1alpha2-api-deprecation-reporter.yaml
 ```
+
+### GKE Autopilot Users
+
+GKE Autopilot clusters enforce security policies that prevent workloads
+requiring privileged access from running by default. To deploy the
+`containerd-socket-tracer` and its companion
+`cri-v1alpha2-api-deprecation-reporter`, you must first install the
+corresponding `AllowlistSynchronizer` resources in your cluster.
+
+These synchronizers enable the workloads to run on Autopilot nodes by matching
+them with a `WorkloadAllowlist`.
+
+To install the allowlists, apply the following manifests:
+
+```sh
+$ kubectl apply -f containerd-socket-tracer-allowlist.yaml
+$ kubectl apply -f cri-v1alpha2-api-deprecation-reporter-allowlist.yaml
+```
+
+After applying these manifests and allowing a few moments for the allowlists to
+synchronize, you can deploy the `containerd-socket-tracer` and
+`cri-v1alpha2-api-deprecation-reporter` DaemonSets as described above.
