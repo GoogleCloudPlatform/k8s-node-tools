@@ -41,7 +41,7 @@ spec:
             path: /
       containers:
         - name: enable-perf-trace
-          image: debian
+          image: gke.gcr.io/debian-base
           imagePullPolicy: Always
           volumeMounts:
             - name: host

@@ -49,7 +49,7 @@ spec:
       hostPID: true
       initContainers:
       - name: kubelet-log-config
-        image: debian
+        image: gke.gcr.io/debian-base
         env:
         # The maximum size of the container log file before it is rotated.
         # Update the value as desired.
