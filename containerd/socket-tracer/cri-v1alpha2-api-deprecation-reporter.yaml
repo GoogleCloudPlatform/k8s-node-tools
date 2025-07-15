@@ -19,7 +19,7 @@ spec:
       hostPID: true
       containers:
       - name: reporter
-        image: mirror.gcr.io/ubuntu:24.04@sha256:dbdff34bb41cecdb07c79af373b44bb4c9ccba2520f014221fb95845f14bc6c1
+        image: mirror.gcr.io/ubuntu:24.04
         command: ["/bin/sh", "-c"]
         args:
         - |
