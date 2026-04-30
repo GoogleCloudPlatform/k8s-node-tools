@@ -2,6 +2,8 @@
 
 This directory provides a mitigation for CVE-2026-31431 using the Kubernetes Security Profiles Operator (SPO). It uses a custom `SeccompProfile` that copies containerd's default allowed syscalls but blocks both `AF_VSOCK` and `AF_ALG` (socket family 38).
 
+This is the recommended mitigation for GKE Autopilot clusters and environments where running privileged DaemonSets is not allowed.
+
 ## Instructions
 
 **1. Install the Security Profiles Operator (SPO)**
@@ -17,7 +19,7 @@ kubectl apply -f seccomp-profile.yaml
 **3. Enable Binding on the Namespace**
 For the binding to take effect, you must label the target namespace to permit the Security Profiles Operator to modify pods within it:
 ```bash
-kubectl label ns my-namespace spo.x-k8s.io/enable-binding=true
+kubectl label ns <your-namespace> spo.x-k8s.io/enable-binding=true
 ```
 
 **4. Bind the Profile to Containers**
@@ -28,3 +30,7 @@ kubectl apply -f profile-binding.yaml
 
 **5. Restart Existing Pods**
 The binding is applied via a mutating webhook during pod creation. Existing pods must be restarted or recreated to pick up the new profile and be protected.
+
+---
+
+_Note: We do not recommend relying on containers as a strict security boundary. For stronger isolation, consider using GKE Sandbox._
