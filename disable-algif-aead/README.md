@@ -1,6 +1,6 @@
 # DaemonSet Mitigation for CVE-2026-31431 (Copy Fail)
 
-This directory contains a privileged DaemonSet mitigation for CVE-2026-31431. It edits the node's `/etc/modprobe.d` configuration to blacklist the vulnerable `algif_aead` module and sets the `initcall_blacklist=algif_aead_init` kernel parameter. This does not change the behavior of `/etc/modprobe.d`.
+This directory contains a privileged DaemonSet mitigation for CVE-2026-31431. It edits the node's `/etc/modprobe.d` configuration to blacklist the vulnerable `algif_aead` module and sets the `initcall_blacklist=algif_aead_init` kernel parameter.
 
 ### ⚠️ Known Limitations & Caveats
 Please be aware of the following issues before deploying this DaemonSet:
