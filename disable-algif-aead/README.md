@@ -24,3 +24,17 @@ kubectl apply -f cos-disable-algif-aead.yaml
 ---
 
 Note: We do not recommend relying on containers as a strict security boundary. For stronger isolation, consider using GKE Sandbox, network policies and the guidance found at https://docs.cloud.google.com/kubernetes-engine/docs/how-to/hardening-your-cluster.
+
+---
+
+For GKE Standard Nodes running Container-Optimized OS, you can set the `initcall_blacklist=algif_aead_init` kernel parameter on your nodes to disable the impacted functionality. You can apply this privileged DaemonSet to set this kernel parameter. Be mindful that this tool immediately reboots nodes; you can use the cloud.google.com/gke-algif-aead-disabled node label to control the application of the DaemonSet. This option will block legitimate usage of this kernel behavior as well as malicious usage.
+
+
+For GKE Standard Nodes running Ubuntu, you can blacklist the algif_aead module on your nodes (for example, by using a privileged DaemonSet) with the following commands:
+
+```bash
+echo "install algif_aead /bin/false" > /etc/modprobe.d/disable-algif-aead.conf
+rmmod algif_aead 2>/dev/null
+```
+
+GKE Autopilot does not allow running privileged daemonsets, and therefore must be mitigated by applying a custom seccomp profile to your workloads to block AF_ALG socket creation. This also works as an alternative mitigation method for GKE Standard clusters.
