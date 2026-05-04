@@ -46,7 +46,7 @@ spec:
           privileged: true
         resources:
           requests:
-            memory: 5Mi
+            memory: 15Mi
             cpu: 5m
         volumeMounts:
         - name: host
