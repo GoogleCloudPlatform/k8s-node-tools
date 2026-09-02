@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: containerd-enable-deprecated-restore
+  namespace: kube-system
+  labels:
+    k8s-app: containerd-enable-deprecated-restore
+spec:
+  selector:
+    matchLabels:
+      name: containerd-enable-deprecated-restore
+  template:
+    metadata:
+      labels:
+        name: containerd-enable-deprecated-restore
+        k8s-app: containerd-enable-deprecated-restore
+    spec:
+      hostPID: true
+      tolerations:
+      - operator: "Exists"
+      volumes:
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd
+          type: Directory
+      initContainers:
+      - name: startup-script
+        image: gke.gcr.io/debian-base:bookworm-v1.0.0-gke.1
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: containerd-config
+          mountPath: /etc/containerd
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          set -u
+
+          CONFIG_FILE="/etc/containerd/config.toml"
+          if ! grep -q "enable_experimental_restore_via_create" "$CONFIG_FILE"; then
+            echo "Enabling enable_experimental_restore_via_create in $CONFIG_FILE..."
+            sed -i '/\[plugins\.[^.]*io\.containerd\.[^.]*\(grpc\.v1\.cri\|cri\.v1\.runtime\)[^.]*\]/a \ \ \ \ enable_experimental_restore_via_create = true' "$CONFIG_FILE"
+            echo "Restarting containerd..."
+            nsenter -t 1 -m -p -- systemctl restart containerd
+          fi
+      containers:
+      - name: pause
+        image: gke.gcr.io/pause:3.8
