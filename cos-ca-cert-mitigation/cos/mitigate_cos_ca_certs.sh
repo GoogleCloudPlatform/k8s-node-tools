@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Mitigation script for eMudhra certificate compromise on Container-Optimized OS (COS).
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+  echo "This script must be run as root in order to apply mitigations."
+  exit 1
+fi
+
+# Match all 5 emSign root CAs and Comodo_AAA_Services_root.crt (AAA Certificate
+# Services), which cross-signed "emSign ECC Root CA - G3".
+BAD_CERT_REGEX='^mozilla/(emSign_.*|Comodo_AAA_Services_root)\.crt'
+
+# ==============================================================================
+# Step 1: System CA Store (app-misc/ca-certificates)
+# ==============================================================================
+# Prefix matching entries in /etc/ca-certificates.conf with "!" to deselect them,
+# then regenerate /etc/ssl/certs/ca-certificates.crt and hash symlinks.
+# This mitigates all host OpenSSL/C/C++ consumers (curl, wget, git, oslogin,
+# systemd, chrony), host Python packages (dev-python/certifi-10001 is a shim
+# pointing to /etc/ssl/certs/ca-certificates.crt), and Go crypto/x509 CLIs.
+echo "[1/4] Updating system CA store (/etc/ca-certificates.conf & /etc/ssl/certs)..."
+sed -i -E "s#${BAD_CERT_REGEX}#!&#" /etc/ca-certificates.conf
+update-ca-certificates --fresh
+
+# ==============================================================================
+# Step 2: Standalone Trust Stores on Read-Only /usr (dm-verity)
+# ==============================================================================
+# Because /usr on COS is a read-only dm-verity filesystem, packages that ship
+# their own CA files under /usr are mitigated via bind mounts.
+echo "[2/4] Mitigating read-only /usr trust stores (chromeos-ca-certificates, grpc)..."
+
+# 2a. chromeos-base/chromeos-ca-certificates:
+# update_engine, libbrillo-http, and crash_sender hardcode
+# /usr/share/chromeos-ca-certificates instead of /etc/ssl/certs. Mask the
+# cross-signing Comodo_AAA_Services_root.pem with /dev/null.
+CROS_COMODO="/usr/share/chromeos-ca-certificates/Comodo_AAA_Services_root.pem"
+[[ -s "${CROS_COMODO}" ]] && mount --bind /dev/null "${CROS_COMODO}"
+
+# 2b. net-libs/grpc:
+# If /usr/share/grpc/roots.pem is present, bind-mount the mitigated system bundle.
+if [[ -f /usr/share/grpc/roots.pem ]]; then
+  umount -l /usr/share/grpc/roots.pem 2>/dev/null || true
+  mount --bind /etc/ssl/certs/ca-certificates.crt /usr/share/grpc/roots.pem
+fi
+
+# ==============================================================================
+# Step 3: Point Built-In Container Utilities (toolbox & cos-extensions) to Fixed Images
+# ==============================================================================
+echo "[3/4] Updating default container tags for toolbox and cos-extensions..."
+
+# 3a. app-admin/toolbox:
+# Update system default tag in /etc/default/toolbox to the patched release.
+sed -i 's/^TOOLBOX_DOCKER_TAG=.*/TOOLBOX_DOCKER_TAG="v20261020"/' /etc/default/toolbox
+
+# 3b. app-admin/extensions-manager (/usr/bin/cos-extensions):
+# Wrap /usr/bin/cos-extensions so `cos-extensions install gpu` defaults to the
+# patched cos-gpu-installer:v2.7.11 image via COS_GPU_INSTALLER.
+# Because /run is mounted with noexec on COS, bind-mount and remount
+# /run/cos-mitigation with exec so both .wrapper and .orig can be executed.
+WRAP_DIR="/run/cos-mitigation"
+mkdir -p -m 0755 "${WRAP_DIR}"
+mountpoint -q "${WRAP_DIR}" || mount --bind "${WRAP_DIR}" "${WRAP_DIR}"
+mount -o remount,bind,exec "${WRAP_DIR}"
+
+umount -l /usr/bin/cos-extensions 2>/dev/null || true
+cp -fp /usr/bin/cos-extensions "${WRAP_DIR}/cos-extensions.orig"
+
+cat <<'EOF' > "${WRAP_DIR}/cos-extensions.wrapper"
+#!/bin/bash
+export COS_GPU_INSTALLER="${COS_GPU_INSTALLER:-gcr.io/cos-cloud/cos-gpu-installer:v2.7.11}"
+exec /run/cos-mitigation/cos-extensions.orig "$@"
+EOF
+
+chmod 0755 "${WRAP_DIR}" "${WRAP_DIR}/cos-extensions.orig" "${WRAP_DIR}/cos-extensions.wrapper"
+mount --bind "${WRAP_DIR}/cos-extensions.wrapper" /usr/bin/cos-extensions
+
+# ==============================================================================
+# Step 4: Restart Active Daemons
+# ==============================================================================
+# Go's crypto/x509 loads /etc/ssl/certs/ca-certificates.crt into memory once per
+# process via sync.Once. Restarting active Go and C/C++ daemons forces them to
+# reload the mitigated system trust store.
+echo "[4/4] Restarting active daemons to reload root certificates..."
+for svc in containerd docker kubelet fluent-bit update-engine node-problem-detector \
+           google-guest-agent google-guest-agent-manager google-guest-compat-manager \
+           google-osconfig-agent device_policy_manager; do
+  systemctl try-restart "${svc}.service" 2>/dev/null || true
+done
+
+echo "Automatic mitigation complete."
+
+# ============================ IMPORTANT =======================================
+#
+# These changes are not persistent. You will need to run this script again to
+# reapply the mitigations if this instance reboots. Refer to
+# https://docs.cloud.google.com/container-optimized-os/docs/how-to/create-configure-instance
+# to configure your instance to run this script on each boot.
+#
+# This has NOT updated any running or cached containers which may be impacted.
+# You will need to install fixed container images and recreate any containers
+# created from unpatched images.
+#
+# The following container images supported by COS have fixes available:
+#   - gcr.io/cos-cloud/cos-gpu-installer:v2.7.11 (default updated in cos-extensions)
+#   - gcr.io/cos-cloud/toolbox:v20261020 (default updated in /etc/default/toolbox;
+#     if you customized ~/.toolboxrc, update TOOLBOX_DOCKER_TAG there as well)
+#   - gcr.io/cos-cloud/cos-dkms:v0.3.19
+#   - gcr.io/cos-cloud/cos-customizer:v20261020
+#
+# This script has not applied mitigations to ensurepip (do not use `python3 -m ensurepip`).
+#
+# ==============================================================================
