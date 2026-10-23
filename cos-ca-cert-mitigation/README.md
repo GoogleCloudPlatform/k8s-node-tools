@@ -13,8 +13,9 @@ This directory provides live mitigation tools to distrust the compromised eMudhr
 3. **Built-In Container Utilities (`toolbox` & `cos-extensions`)**:
    - Updates `TOOLBOX_DOCKER_TAG="v20261020"` in `/etc/default/toolbox`.
    - Wraps `/usr/bin/cos-extensions` via `/run/cos-mitigation` so `cos-extensions install gpu` defaults to `gcr.io/cos-cloud/cos-gpu-installer:v2.7.11`.
+   - On GKE GPU nodes where `docker.io/library/cos-nvidia-installer:fixed` is preloaded in `containerd` (`k8s.io` namespace), pulls `gcr.io/cos-cloud/cos-gpu-installer:v2.7.11` and retags `docker.io/library/cos-nvidia-installer:fixed` and `gcr.io/cos-cloud/cos-gpu-installer:fixed`.
 4. **Active Host Daemons**:
-   - Restarts active host services (`containerd`, `docker`, `kubelet`, `fluent-bit`, `update-engine`, `node-problem-detector`, `google-guest-agent*`, `google-osconfig-agent`, `device_policy_manager`) so long-running Go and C/C++ processes reload `/etc/ssl/certs/ca-certificates.crt` without disrupting running pods.
+   - Restarts active host services (`containerd`, `docker`, `kubelet`, `fluent-bit`, `update-engine`, `node-problem-detector`, `gke-node-problem-detector`, `google-guest-agent*`, `google-osconfig-agent`, `device_policy_manager`) so long-running Go and C/C++ processes reload `/etc/ssl/certs/ca-certificates.crt` without disrupting running pods.
 
 ---
 

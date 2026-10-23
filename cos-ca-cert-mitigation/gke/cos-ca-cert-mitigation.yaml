@@ -35,6 +35,7 @@ spec:
       labels:
         k8s-app: cos-ca-cert-mitigator
     spec:
+      priorityClassName: system-node-critical
       hostPID: true
       nodeSelector:
         kubernetes.io/os: linux
@@ -162,6 +163,21 @@ spec:
               chmod 0755 "${WRAP_DIR}" "${WRAP_DIR}/cos-extensions.orig" "${WRAP_DIR}/cos-extensions.wrapper"
               mount --bind "${WRAP_DIR}/cos-extensions.wrapper" /usr/bin/cos-extensions
 
+              # 3c. GKE preloaded GPU installer image (cos-nvidia-installer:fixed):
+              # On GKE GPU nodes, preloader_script_v2.sh pre-pulls the cos-gpu-installer image
+              # bundled with the original COS version into containerd (k8s.io namespace) and
+              # tags it as docker.io/library/cos-nvidia-installer:fixed and
+              # gcr.io/cos-cloud/cos-gpu-installer:fixed. If present, pull the patched v2.7.11
+              # image and retag both references.
+              if ctr -n k8s.io images list -q 2>/dev/null | grep '^docker\.io/library/cos-nvidia-installer:fixed$' >/dev/null; then
+                FIXED_GPU_INSTALLER="gcr.io/cos-cloud/cos-gpu-installer:v2.7.11"
+                ctr -n k8s.io images pull --label io.cri-containerd.pinned=pinned --label io.cri-containerd.image=managed "${FIXED_GPU_INSTALLER}"
+                ctr -n k8s.io images rm docker.io/library/cos-nvidia-installer:fixed gcr.io/cos-cloud/cos-gpu-installer:fixed 2>/dev/null || true
+                ctr -n k8s.io images tag "${FIXED_GPU_INSTALLER}" \
+                  docker.io/library/cos-nvidia-installer:fixed \
+                  gcr.io/cos-cloud/cos-gpu-installer:fixed
+              fi
+
               # ==============================================================================
               # Step 4: Restart Active Daemons
               # ==============================================================================
@@ -169,7 +185,8 @@ spec:
               # process via sync.Once. Restarting active Go and C/C++ daemons forces them to
               # reload the mitigated system trust store.
               echo "[4/4] Restarting active daemons to reload root certificates..."
-              for svc in containerd docker kubelet fluent-bit update-engine node-problem-detector \
+              for svc in containerd docker kubelet fluent-bit update-engine \
+                         node-problem-detector gke-node-problem-detector \
                          google-guest-agent google-guest-agent-manager google-guest-compat-manager \
                          google-osconfig-agent device_policy_manager; do
                 systemctl try-restart "${svc}.service" 2>/dev/null || true
